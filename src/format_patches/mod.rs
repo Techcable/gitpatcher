@@ -4,6 +4,7 @@ use crate::format_patches::format::{CommitMessage, InvalidCommitMessage};
 use std::fmt::{Display, Formatter};
 use std::fmt;
 use slog::{Logger, debug};
+use crate::utils::SimpleParser;
 
 mod format;
 
@@ -12,9 +13,7 @@ pub struct FormatOptions {
 }
 impl Default for FormatOptions {
     fn default() -> Self {
-        let mut diff_opts = DiffOptions::new();
-        diff_opts.ignore_whitespace_eol(true);
-        diff_opts.ignore_whitespace_change(true);
+        let diff_opts = DiffOptions::new();
         FormatOptions { diff_opts }
     }
 }
@@ -64,11 +63,76 @@ impl<'repo> PatchFormatter<'repo> {
         let patch_name = message.patch_file_name(index as u32 + 1);
         let patch = self.out_dir.join(&patch_name);
         let buf = diff.format_email(1, 1, &commit, None)?;
-        std::fs::write(&patch, &*buf).map_err(|cause| PatchFormatError::PatchWriteError {
+        let s = cleanup_patch(buf.as_str().unwrap()).map_err(|cause| {
+            PatchFormatError::PatchCleanupError {
+                cause, patch_file: patch.clone()
+            }
+        })?;
+        std::fs::write(&patch, s).map_err(|cause| PatchFormatError::PatchWriteError {
             cause, patch_file: patch.clone()
         })?;
         debug!(self.logger, "Generating patch: {}", patch_name);
         Ok(())
+    }
+}
+
+fn cleanup_patch(s: &str) -> Result<String, CleanupPatchErr> {
+    let mut result = String::new();
+    let mut pushln = |line: &str| {
+        result.push_str(line);
+        result.push('\n');
+    };
+    let mut parser = SimpleParser::new(s);
+    /*
+     * Ensure there is one and only one newline between
+     * the summary line (Subject: [PATCH]),
+     * and the rest of the commit message
+     */
+    let subject_line = parser.take_until(
+        |line| line.starts_with("Subject: [PATCH]"),
+        &mut pushln
+    ).map_err(|_| CleanupPatchErr::UnexpectedEof { expected: "Subject line" })?;
+    pushln(subject_line);
+    parser.skip_whitespace();
+    /*
+     * libgit2 generates diff stats, which we don't care about
+     * Skip until we see start of diff stats `---`
+     */
+    let mut trailing_commit_message = String::new();
+    parser.take_until(
+        |line| line.starts_with("---"),
+        |line| {
+            trailing_commit_message.push_str(line);
+            trailing_commit_message.push('\n');
+        }
+    ).map_err(|_| CleanupPatchErr::UnexpectedEof { expected: "Diff stats" })?;
+    let trailing_commit_message = trailing_commit_message.trim();
+    pushln("");
+    if !trailing_commit_message.is_empty() {
+        pushln(trailing_commit_message);
+    }
+    pushln("");
+    // Ignore until we see a `diff --git a/file.txt b/file.txt` line
+    let diff_line = parser.take_until(
+        |line| line.starts_with("diff"),
+        |_| {}
+    ).map_err(|_| CleanupPatchErr::UnexpectedEof { expected: "Diff line" })?;
+    pushln(diff_line);
+    // Dump all remaining lines
+    while let Ok(line) = parser.pop() {
+        result.push_str(line);
+        result.push('\n')
+    }
+    Ok(result)
+}
+#[derive(Debug)]
+pub enum CleanupPatchErr {
+    UnexpectedEof {
+        expected: &'static str,
+    },
+    InvalidLine {
+        line_number: usize,
+        message: & 'static str
     }
 }
 
@@ -81,6 +145,10 @@ pub enum PatchFormatError {
     PatchWriteError {
         patch_file: PathBuf,
         cause: std::io::Error
+    },
+    PatchCleanupError {
+        patch_file: PathBuf,
+        cause: CleanupPatchErr
     },
     InternalGit(git2::Error)
 }
@@ -96,6 +164,17 @@ impl Display for PatchFormatError {
             PatchFormatError::InternalGit(cause) => {
                 Display::fmt(cause, f)
             },
+            PatchFormatError::PatchCleanupError { patch_file, cause } => {
+                write!(f, "Internal error cleaning patch {}:", patch_file.display())?;
+                match cause {
+                    CleanupPatchErr::UnexpectedEof { expected } => {
+                        writeln!(f, "Unexpected EOF, expected {}", expected)
+                    },
+                    CleanupPatchErr::InvalidLine { line_number, message } => {
+                        writeln!(f, "Invalid line @ {}: {}", line_number, message)
+                    },
+                }
+            }
         }
     }
 }

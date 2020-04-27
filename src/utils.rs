@@ -50,6 +50,64 @@ impl<'a> SimpleParser<'a> {
         }
     }
 }
+pub struct RememberLast<T: Clone> {
+    limit: usize,
+    // Items we remember from oldest to newest
+    last: Vec<T>,
+}
+impl<T: Clone> RememberLast<T> {
+    pub fn new(limit: usize) -> Self {
+        assert!(limit > 0);
+        RememberLast {
+            limit, last: Vec::with_capacity(limit)
+        }
+    }
+    pub fn remember(&mut self, element: &T) {
+        if self.last.len() < self.limit {
+            self.last.push(element.clone());
+        } else {
+            self.last.rotate_left(1);
+            Clone::clone_from(
+                self.last.last_mut().unwrap(),
+                &element
+            );
+        }
+    }
+    #[inline]
+    pub fn back(&self, offset: usize) -> &T {
+        &self.last[self.last.len() - offset - 1]
+    }
+    /// The last elements we remember,
+    /// from oldest to newes
+    #[inline]
+    pub fn as_slice(&self) -> &[T] {
+        &self.last
+    }
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.last.len()
+    }
+}
+pub struct IterRememberLast<I: Iterator> where I::Item: Clone {
+    remember: RememberLast<I::Item>,
+    iter: I
+}
+impl<I: Iterator> IterRememberLast<I> where I::Item: Clone {
+}
+impl<I: Iterator> Iterator for IterRememberLast<I> where I::Item: Clone {
+    type Item = I::Item;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(element) = self.iter.next() {
+            self.remember.remember(&element);
+            Some(element)
+        } else {
+            None
+        }
+    }
+}
+
 
 #[derive(Debug)]
 pub struct UnexpectedEof;

@@ -57,7 +57,7 @@ fn main() {
             eprintln!("Unable to discover repo for patch dir: {}", e);
             std::process::exit(1);
         });
-    let patches = PatchFileSet::load(&base_repo, &patch_dir)
+    let mut patches = PatchFileSet::load(&base_repo, &patch_dir)
         .unwrap_or_else(|e| {
             eprintln!("Unable to load patches: {}", e);
             std::process::exit(1)
@@ -69,7 +69,7 @@ fn main() {
         });
     regenerate_patches(
         &upstream_commit,
-        &patches,
+        &mut patches,
         &patched_repo,
         Logger::root(TerminalDrain.ignore_res(), o!()),
         Default::default()

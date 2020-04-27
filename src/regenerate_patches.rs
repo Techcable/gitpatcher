@@ -186,9 +186,7 @@ pub fn regenerate_patches(
                 checkout_patches.path(&patch.path);
             }
         }
-        let head = patch_set.root_repo.head()?.peel(ObjectType::Any)?;
-        patch_set.root_repo.reset(&head, ResetType::Hard, Some(&mut checkout_patches))?;
-        patch_set.stage_changes()?;
+        patch_set.root_repo.checkout_head(Some(&mut checkout_patches))?;
     }
 
     info!(logger, "Patches for {}", target_name);

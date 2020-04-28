@@ -77,7 +77,7 @@ impl PatchFile {
             let index = usize::from_str(&file_name[..4])
                 .map_err(|_| PatchError::InvalidPatchName { name: file_name.into() })?;
             Ok(PatchFile {
-                index: index, path: parent.join(file_name)
+                index, path: parent.join(file_name)
             })
         } else {
             Err(PatchError::InvalidPatchName { name: file_name.into() })
@@ -150,7 +150,7 @@ pub fn regenerate_patches(
         diff.print(DiffFormat::Patch, |delta, _hunk, line| {
             let buffer = deltas_by_path
                 .entry(delta.new_file().path().unwrap().to_path_buf())
-                .or_insert_with(|| String::new());
+                .or_insert_with(String::new);
             let origin = line.origin();
             match origin {
                 ' ' | '+' | '-' => buffer.push(origin),
@@ -193,10 +193,10 @@ pub fn regenerate_patches(
 }
 fn is_trivial_patch_change(diff: &str, git_ver: &str) -> bool {
     const CHANGE_MARKERS: &[char] = &['+', '-'];
-    let mut lines = diff.lines();
+    let lines = diff.lines();
     // NOTE: Remember one more than we strictly need
     let mut remember = RememberLast::new(5);
-    while let Some(line) = lines.next() {
+    for line in lines {
         // We only care about lines that are (+|-)
         if !line.starts_with(CHANGE_MARKERS) {
             continue

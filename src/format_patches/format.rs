@@ -28,17 +28,16 @@ impl<'a> CommitMessage<'a> {
             return Err(InvalidCommitMessage::EmptyMessage)
         }
         let summary_start = full.char_indices()
-            .skip_while(|&(_, c)| c.is_whitespace())
-            .next()
+            .find(|&(_, c)| !c.is_whitespace())
             .ok_or(InvalidCommitMessage::BlankMessage)?.0;
-        let summary_end = full.find('\n').unwrap_or(full.len());
+        let summary_end = full.find('\n').unwrap_or_else(|| full.len());
         let potential_tail = &full[summary_end..];
         // Tail starts at the first non-whitespace char past summary
         let tail_start = potential_tail.find(|c: char| !c.is_whitespace())
             .unwrap_or(0) + summary_end;
         // Strip trailing whitespace
         let tail_end = potential_tail.rfind(|c: char| !c.is_whitespace())
-            .unwrap_or(potential_tail.len()) + summary_end;
+            .unwrap_or_else(|| potential_tail.len()) + summary_end;
         Ok(CommitMessage {
             full,
             summary_range: summary_start..summary_end,
@@ -60,10 +59,8 @@ impl<'a> CommitMessage<'a> {
             } else if c == '(' && chars.peek() == Some(&')'){
                 assert_eq!(chars.next(), Some(')'))
                 // Ignore paired parens ()
-            } else {
-                if !sanitized_name.ends_with("-") {
-                    sanitized_name.push('-');
-                }
+            } else if !sanitized_name.ends_with('-') {
+                sanitized_name.push('-');
             }
         }
         // Strip trailing '.' && '-'

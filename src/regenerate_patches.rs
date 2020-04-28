@@ -1,4 +1,4 @@
-use git2::{Repository, RepositoryState, Commit, DiffFormat, Tree, DiffOptions, ResetType, ObjectType};
+use git2::{Repository, RepositoryState, Commit, DiffFormat, Tree, DiffOptions};
 use std::path::{Path, PathBuf};
 use slog::{Logger, debug, info, warn};
 use std::str::FromStr;
@@ -9,7 +9,6 @@ use lazy_static::lazy_static;
 use std::io::{BufReader, BufRead};
 use std::fs::File;
 use crate::utils::{RememberLast};
-use itertools::Itertools;
 
 pub struct PatchFileSet<'a> {
     root_repo: &'a Repository,

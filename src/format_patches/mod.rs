@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use crate::format_patches::format::{CommitMessage, InvalidCommitMessage};
 use std::fmt::{Display, Formatter};
 use std::fmt;
-use slog::{Logger, debug};
+use slog::{Logger, info};
 use crate::utils::SimpleParser;
 
 mod format;
@@ -71,7 +71,7 @@ impl<'repo> PatchFormatter<'repo> {
         std::fs::write(&patch, s).map_err(|cause| PatchFormatError::PatchWriteError {
             cause, patch_file: patch.clone()
         })?;
-        debug!(self.logger, "Generating patch: {}", patch_name);
+        info!(self.logger, "Generating patch: {}", patch_name);
         Ok(())
     }
 }

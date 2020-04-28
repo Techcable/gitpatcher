@@ -5,7 +5,7 @@ use slog::{Drain, OwnedKVList, Record, Level, Logger, o};
 use std::convert::Infallible;
 
 const HELP: &str = "./regenerate_patches <patched_rep> <upstream> <patch_dir>";
-const DEBUG: bool = true;
+const DEBUG: bool = false;
 
 pub struct TerminalDrain;
 impl Drain for TerminalDrain {

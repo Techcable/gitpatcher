@@ -13,10 +13,11 @@ slog = "2.5.2"
 regex = "1.3.7"
 lazy_static = "1.4.0"
 itertools = "0.9.0"
+chrono = "0.4.11"
 
 [dependencies.git2]
 git = "https://github.com/Techcable/git2-rs"
-branch = "feature/diff-format-email"
+branch = "gitpatcher"
 # We don't need https
 default-features = false
 

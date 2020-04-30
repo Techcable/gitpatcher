@@ -207,7 +207,7 @@ fn is_trivial_patch_change(diff: &str, git_ver: &str) -> bool {
         }
     }
     match remember.len() {
-        0 => false,
+        0 => true,
         // Ignore changes to $git_ver
         1 => remember.back(0)[1..].trim() == git_ver,
         _ => {
@@ -241,7 +241,7 @@ fn is_trivial_patch_change(diff: &str, git_ver: &str) -> bool {
 fn is_trivial_line(line: &[u8]) -> bool {
     use regex::bytes::Regex;
     lazy_static! {
-        static ref TRIVIAL_PATTERN: Regex = Regex::new(r#"From [a-f0-9]{32,}|--- a|\+\+\+ b|^.?index"#).unwrap();
+        static ref TRIVIAL_PATTERN: Regex = Regex::new(r#"From [a-f0-9]+|--- a|\+\+\+ b|^.?index"#).unwrap();
     }
     TRIVIAL_PATTERN.is_match(line)
 }

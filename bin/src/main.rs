@@ -113,6 +113,7 @@ fn apply_all_patches(opts: ApplyAllPatches) {
             .unwrap_or_else(|cause| {
                 eprintln!("Unable to reset to {:?}: {}", upstream, cause)
             });
+        println!("Reset {} to {}", opts.target_repo.display(), upstream);
     }
     let entries = std::fs::read_dir(&opts.patch_dir)
         .unwrap_or_else(|cause| {

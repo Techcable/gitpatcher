@@ -118,6 +118,7 @@ impl EmailMessage {
           let mut message = self.message_summary.clone();
           if !self.message_tail.is_empty() {
                message.push('\n');
+               message.push('\n');
                message.push_str(&self.message_tail);
           }
           message

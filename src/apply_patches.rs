@@ -64,8 +64,7 @@ impl EmailMessage {
                if line.is_empty() {
                     break
                } else {
-                    // I consider breaking over newlines an implicit space
-                    message_subject.push(' ');
+                    // Breaking over newlines doesn't affect final result
                     message_subject.push_str(line);
                }
           }

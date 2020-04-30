@@ -49,6 +49,11 @@ struct ApplyPatchOpts {
     /// The patch file to apply
     #[structopt(parse(from_os_str))]
     patch_file: PathBuf,
+    /// The target repository to apply patches too
+    ///
+    /// Defaults to current directory if nothing is specified
+    #[structopt(long = "target", parse(from_os_Str))]
+    target_repo: Option<PathBuf>
 }
 
 #[derive(StructOpt)]
@@ -72,10 +77,16 @@ fn main() {
 }
 
 fn apply_patch(opts: ApplyPatchOpts) {
-    let target_repo = Repository::open(env::current_dir()
-        .expect("Unable to detect current dir"))
+    let target_repo = match opts.target_repo {
+        Some(location) => location,
+        None => env::current_dir().unwrap_or_else(|cause| {
+            eprintln!("Unable to detect current dir: {}", cause);
+            exit(1);
+        })
+    };
+    let target_repo = Repository::open(target_repo)
         .unwrap_or_else(|cause| {
-            eprintln!("Unable to access current repo: {}", cause);
+            eprintln!("Unable to access target repo {}: {}", target_repo.display() cause);
             ::std::process::exit(1);
         });
     let message = std::fs::read_to_string(&opts.patch_file).unwrap_or_else(|cause| {

@@ -1,11 +1,10 @@
-use chrono::{Utc, DateTime, FixedOffset};
-use git2::{Oid, Diff, Repository};
+use chrono::{DateTime, FixedOffset};
+use git2::{Oid, Diff, Repository, ApplyLocation, Signature};
 use regex::{Regex, Captures};
-use std::str::Lines;
 use lazy_static::lazy_static;
-use itertools::PeekingNext;
+use std::fmt::{self, Display, Formatter};
 
-struct EmailMessage {
+pub struct EmailMessage {
      upstream_commit: Oid,
      date: DateTime<FixedOffset>,
      message_summary: String,
@@ -15,11 +14,11 @@ struct EmailMessage {
      diff: Diff<'static>
 }
 lazy_static! {
-     static ref HEADER_LINE: Regex = Regex::new("^From ([0-9A-F]{1,40}) Mon Sep 17 00:00:00 2001$").unwrap();
-     static ref AUTHOR_LINE: Regex = Regex::new("^From (.*) <.*>$").unwrap();
-     static ref DATE_LINE: Regex = Regex::new(r#"^Date (.* [\+-]\d+)$"#).unwrap();
-     static ref SUBJECT_LINE: Regex = Regex::new(r#"^Subject: [Patch[^\]]*] (.*)$"#).unwrap();
-     static ref BEGIN_DIFF_LINE: Regex = Regex::new(r"#^diff --git a/(.*) b/(.*)$")
+     static ref HEADER_LINE: Regex = Regex::new("^From ([0-9A-Fa-f]{1,40}) Mon Sep 17 00:00:00 2001$").unwrap();
+     static ref AUTHOR_LINE: Regex = Regex::new("^From: (.*) <(.*)>$").unwrap();
+     static ref DATE_LINE: Regex = Regex::new(r#"^Date: (.* [\+-]\d+)$"#).unwrap();
+     static ref SUBJECT_LINE: Regex = Regex::new(r#"^Subject: \[PATCH\] (.*)$"#).unwrap();
+     static ref BEGIN_DIFF_LINE: Regex = Regex::new(r#"^diff --git a/(.*) b/(.*)$"#).unwrap();
 }
 fn match_header_line<'a>(
      lines: &mut dyn Iterator<Item=&'a str>,
@@ -108,11 +107,49 @@ impl EmailMessage {
           let upstream_commit = Oid::from_str(&header[1]).unwrap();
           Ok(EmailMessage {
                diff, upstream_commit, date,
-               message_summary, message_tail,
+               message_summary: message_subject,
+               message_tail: trailing_message,
                author_name: author_name.into(),
-               author_email: author_email.into_string()
+               author_email: author_email.into()
           })
+     }
 
+     pub fn full_message(&self) -> String {
+          let mut message = self.message_summary.clone();
+          if !self.message_tail.is_empty() {
+               message.push('\n');
+               message.push_str(&self.message_tail);
+          }
+          message
+     }
+
+     /// Apply this email as a new commit against the repo
+     pub fn apply_commit(&self, target: &Repository) -> Result<(), git2::Error> {
+          target.apply(&self.diff, ApplyLocation::Both, None)?;
+          let time = git2::Time::new(
+               self.date.timestamp(),
+               self.date.timezone().local_minus_utc()
+          );
+          let author = Signature::new(
+               &self.author_name,
+               &self.author_email,
+               &time
+          )?;
+          let tree = target.index()?.write_tree_to(target)?;
+          let tree = target.find_tree(tree)?;
+          // TODO: Handle detatched head/no commits
+          let head_commit = target.head()?.peel_to_commit()?;
+          let parents = vec![&head_commit];
+          let message = self.full_message();
+          target.commit(
+               Some("HEAD"),
+               &author,
+               &author,
+               &message,
+               &tree,
+               &parents
+          )?;
+          Ok(())
      }
 }
 
@@ -134,5 +171,24 @@ pub enum InvalidEmailMessage {
 impl From<git2::Error> for InvalidEmailMessage {
      fn from(cause: git2::Error) -> Self {
           InvalidEmailMessage::Git(cause)
+     }
+}
+
+impl Display for InvalidEmailMessage {
+     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+          match self {
+               InvalidEmailMessage::UnexpectedEof { expected } => {
+                    write!(f, "Unexpected EOF, expected {}", expected)
+               },
+               InvalidEmailMessage::InvalidHeader { expected, actual } => {
+                    write!(f, "Invalid header line, expeted {}: {:?}", expected, actual)
+               },
+               InvalidEmailMessage::InvalidDate { actual, cause } => {
+                    write!(f, "Invalid date {:?}: {}", actual, cause)
+               },
+               InvalidEmailMessage::Git(cause) => {
+                    write!(f, "Internal git error: {}", cause)
+               },
+          }
      }
 }

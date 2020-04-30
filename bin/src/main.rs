@@ -6,8 +6,10 @@ use gitpatcher::apply_patches::EmailMessage;
 use std::process::exit;
 use std::env;
 use structopt_derive::StructOpt;
-use git2::{Repository, ObjectType};
+use git2::{Repository, ObjectType, ResetType};
 use structopt::StructOpt as IStructOpt;
+use git2::build::CheckoutBuilder;
+use std::ffi::OsStr;
 
 const DEBUG: bool = false;
 
@@ -40,6 +42,8 @@ impl Drain for TerminalDrain {
 enum GitPatcher {
     /// Apply a single patch file to the current repository
     ApplyPatch(ApplyPatchOpts),
+    /// Apply an entire set of patch files to the specified repository
+    ApplyAllPatches(ApplyAllPatches),
     /// Regenerate a set of patched files by comparing a patched repo to an upstream reference
     RegeneratePatches(RegeneratePatchOpts)
 }
@@ -52,8 +56,21 @@ struct ApplyPatchOpts {
     /// The target repository to apply patches too
     ///
     /// Defaults to current directory if nothing is specified
-    #[structopt(long = "target", parse(from_os_Str))]
+    #[structopt(long = "target", parse(from_os_str))]
     target_repo: Option<PathBuf>
+}
+
+#[derive(StructOpt)]
+struct ApplyAllPatches {
+    /// The upstream reference to reset to before applying patches
+    #[structopt(long)]
+    upstream: Option<String>,
+    /// The target repository to apply patches too
+    #[structopt(parse(from_os_str))]
+    target_repo: PathBuf,
+    /// The directory containing all the patch files
+    #[structopt(parse(from_os_str))]
+    patch_dir: PathBuf
 }
 
 #[derive(StructOpt)]
@@ -73,7 +90,72 @@ fn main() {
     match opt {
         GitPatcher::ApplyPatch(opts) => apply_patch(opts),
         GitPatcher::RegeneratePatches(opts) => regenerate_patches(opts),
+        GitPatcher::ApplyAllPatches(opts) => apply_all_patches(opts)
     }
+}
+
+fn apply_all_patches(opts: ApplyAllPatches) {
+    let target = Repository::open(&opts.target_repo)
+        .unwrap_or_else(|cause| {
+            eprintln!("Unable to access target repo: {}", cause);
+            exit(1);
+        });
+    if let Some(ref upstream) = opts.upstream {
+        let obj = target.resolve_reference_from_short_name(upstream)
+            .and_then(|reference| reference.peel(ObjectType::Any))
+            .unwrap_or_else(|cause| {
+                eprintln!("Unable to resolve {:?}: {}", upstream, cause);
+                exit(1);
+            });
+        let mut checkout = CheckoutBuilder::new();
+        checkout.remove_untracked(true);
+        target.reset(&obj, ResetType::Hard, Some(&mut checkout))
+            .unwrap_or_else(|cause| {
+                eprintln!("Unable to reset to {:?}: {}", upstream, cause)
+            });
+    }
+    let entries = std::fs::read_dir(&opts.patch_dir)
+        .unwrap_or_else(|cause| {
+            eprintln!("Error accessing patch dir {}: {}", opts.patch_dir.display(), cause);
+            exit(1)
+        });
+    let mut patch_files = Vec::new();
+    for entry in entries {
+        let entry = entry.unwrap_or_else(|cause| {
+            eprintln!("Error accessing patch dir {}: {}", opts.patch_dir.display(), cause);
+            exit(1)
+        });
+        // Skip all patch files that do not end with '.patch'
+        let full_path = entry.path();
+        if full_path.extension() != Some(OsStr::new("patch")) { continue }
+        let raw_name = entry.file_name();
+        let s = raw_name.to_str().unwrap_or_else(|| {
+            eprintln!("Invalid patch file name must be UTF8: {:?}", entry.file_name());
+            exit(1);
+        });
+        assert!(s.ends_with(".patch"));
+        let patch_name = &s[..(s.len() - ".patch".len())];
+        let message_str = std::fs::read_to_string(&full_path)
+            .unwrap_or_else(|cause| {
+                eprintln!("Unable to read patch file {}: {}", s, cause);
+                exit(1);
+            });
+        let email = EmailMessage::parse(&message_str)
+            .unwrap_or_else(|cause| {
+                eprintln!("Invalid patch file {}: {}", s, cause);
+                exit(1);
+            });
+        patch_files.push((String::from(patch_name), email));
+    }
+    patch_files.sort_by(|(first, _), (second, _)| first.cmp(second));
+    for (name, email) in &patch_files {
+        println!("Applying {}.patch", name);
+        email.apply_commit(&target).unwrap_or_else(|cause| {
+            eprintln!("Failed to apply patch: {}", cause);
+            exit(1);
+        })
+    }
+    println!("Successfully applied {} patches!", patch_files.len());
 }
 
 fn apply_patch(opts: ApplyPatchOpts) {
@@ -84,9 +166,9 @@ fn apply_patch(opts: ApplyPatchOpts) {
             exit(1);
         })
     };
-    let target_repo = Repository::open(target_repo)
+    let target_repo = Repository::open(&target_repo)
         .unwrap_or_else(|cause| {
-            eprintln!("Unable to access target repo {}: {}", target_repo.display() cause);
+            eprintln!("Unable to access target repo {}: {}", target_repo.display(), cause);
             ::std::process::exit(1);
         });
     let message = std::fs::read_to_string(&opts.patch_file).unwrap_or_else(|cause| {

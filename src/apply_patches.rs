@@ -128,7 +128,8 @@ impl EmailMessage {
           target.apply(&self.diff, ApplyLocation::Both, None)?;
           let time = git2::Time::new(
                self.date.timestamp(),
-               self.date.timezone().local_minus_utc()
+               // seconds -> minutes
+               self.date.timezone().local_minus_utc() / 60
           );
           let author = Signature::new(
                &self.author_name,

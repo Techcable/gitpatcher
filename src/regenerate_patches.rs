@@ -162,6 +162,7 @@ pub fn regenerate_patches(
         let mut checkout_patches = CheckoutBuilder::new();
         checkout_patches.recreate_missing(true);
         checkout_patches.force();
+        let mut num_trivial = 0;
         for patch in &patch_set.patches {
             let git_version = {
                 let mut reader = BufReader::new(File::open(&patch.path)?);
@@ -182,10 +183,13 @@ pub fn regenerate_patches(
             let delta = &deltas_by_path[&patch.path];
             if is_trivial_patch_change(&delta, &git_version) {
                 debug!(logger, "Ignoring trivial patch: {}", patch.path.display());
+                num_trivial += 1;
                 checkout_patches.path(&patch.path);
             }
         }
-        patch_set.root_repo.checkout_head(Some(&mut checkout_patches))?;
+        if num_trivial > 0 {
+            patch_set.root_repo.checkout_head(Some(&mut checkout_patches))?;
+        }
     }
 
     info!(logger, "Patches for {}", target_name);

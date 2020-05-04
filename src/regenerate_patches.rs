@@ -9,6 +9,7 @@ use lazy_static::lazy_static;
 use std::io::{BufReader, BufRead};
 use std::fs::File;
 use crate::utils::{RememberLast};
+use itertools::Itertools;
 
 pub struct PatchFileSet<'a> {
     root_repo: &'a Repository,
@@ -138,9 +139,33 @@ pub fn regenerate_patches(
     // Remove any 'trivial' patches
     {
         let head_tree = patch_set.root_repo.head()?.peel_to_tree()?;
-        let mut filtered_tree = patch_set.root_repo.treebuilder(Some(&head_tree))?;
-        filtered_tree.filter(|entry| entry.id() == patch_set.head_patch_tree.id())?;
-        let filtered_tree = patch_set.root_repo.find_tree(filtered_tree.write()?)?;
+        let mut filtered_tree = None;
+        let mut parents = patch_set.patch_dir.ancestors()
+            .collect_vec();
+        let len = parents.len();
+        parents.truncate(len - 1); // Trim last (empty)
+        for path in parents {
+            let entry = head_tree.get_path(path)?;
+            let child_tree = match filtered_tree {
+                None => {
+                    let tree = entry.to_object(&patch_set.root_repo)?
+                        .peel_to_tree()?;
+                    // Use our initial tree which is a copy of `patch_dir` itself
+                    patch_set.root_repo.treebuilder(Some(&tree))?
+                },
+                Some(existing_tree) => {
+                    existing_tree
+                }
+            };
+            let mut builder = patch_set.root_repo.treebuilder(None)?;
+            builder.insert(
+                path.file_name().unwrap_or_else(|| panic!("Invalid parent {:?}", path)),
+                child_tree.write()?,
+                entry.filemode()
+            )?;
+            filtered_tree = Some(builder);
+        }
+        let filtered_tree = patch_set.root_repo.find_tree(filtered_tree.unwrap().write()?)?;
         let mut ops = DiffOptions::new();
         ops.ignore_whitespace_eol(true);
         let diff = patch_set.root_repo.diff_tree_to_index(

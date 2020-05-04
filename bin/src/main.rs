@@ -11,8 +11,6 @@ use structopt::StructOpt as IStructOpt;
 use git2::build::CheckoutBuilder;
 use std::ffi::OsStr;
 
-const DEBUG: bool = false;
-
 pub struct TerminalDrain;
 impl Drain for TerminalDrain {
     type Ok = ();
@@ -27,7 +25,7 @@ impl Drain for TerminalDrain {
                 println!("{}", record.msg());
             },
             Level::Debug => {
-                if DEBUG {
+                if std::env::var_os("GITPATCHER_DEBUG").map_or(false, |s| s == "1") {
                     println!("DEBUG: {}", record.msg());
                 }
             },

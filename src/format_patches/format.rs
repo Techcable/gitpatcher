@@ -64,9 +64,14 @@ impl<'a> CommitMessage<'a> {
             }
         }
         // Strip trailing '.' && '-'
-        while sanitized_name.ends_with(&['.', '-'] as &[char]) {
-            sanitized_name.pop().unwrap();
-        }
+        sanitized_name.truncate(
+            sanitized_name.rfind(|c| c != '.' && c != '-')
+            .unwrap_or(0) + 1
+        );
+        // Strip leading '-'
+        let first_valid = sanitized_name.find(|c| c != '-')
+            .unwrap_or(sanitized_name.len());
+        sanitized_name.drain(0..first_valid);
         sanitized_name.truncate(MAX_LENGTH);
         format!("{:04}-{}.patch", patch_no, sanitized_name)
     }
@@ -160,5 +165,10 @@ mod test {
             patch_file_name("Add ability to configure frosted_ice properties", 95),
             "0095-Add-ability-to-configure-frosted_ice-properties.patch"
         );
+        // DuckLogic patches
+        assert_eq!(
+            patch_file_name("[sys] Declare DuckLogic-internal methods for list", 1),
+            "0001-sys-Declare-DuckLogic-internal-methods-for-list.patch"
+        )
     }
 }

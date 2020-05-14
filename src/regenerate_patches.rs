@@ -205,7 +205,8 @@ pub fn regenerate_patches(
                     &last[1]
                 }.trim().to_string()
             };
-            let delta = &deltas_by_path[&patch.path];
+            let delta = deltas_by_path.get(&patch.path)
+                    .unwrap_or_else(|| panic!("Missing delta for {}", patch.path.display()));
             if is_trivial_patch_change(&delta, &git_version) {
                 debug!(logger, "Ignoring trivial patch: {}", patch.path.display());
                 num_trivial += 1;

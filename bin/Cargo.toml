@@ -3,6 +3,9 @@ name = "gitpatcher-bin"
 version = "0.1.0"
 authors = ["Techcable <Techcable@techcable.net>"]
 edition = "2018"
+description = """A command line app for using gitpatcher"""
+license = "MIT"
+repository = "https://github.com/Techcable/gitpatcher"
 
 [[bin]]
 name = "gitpatcher"

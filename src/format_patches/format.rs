@@ -70,7 +70,7 @@ impl<'a> CommitMessage<'a> {
         );
         // Strip leading '-'
         let first_valid = sanitized_name.find(|c| c != '-')
-            .unwrap_or(sanitized_name.len());
+            .unwrap_or_else(|| sanitized_name.len());
         sanitized_name.drain(0..first_valid);
         sanitized_name.truncate(MAX_LENGTH);
         format!("{:04}-{}.patch", patch_no, sanitized_name)

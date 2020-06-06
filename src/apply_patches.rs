@@ -1,11 +1,10 @@
 use chrono::{DateTime, FixedOffset};
-use git2::{Oid, Diff, Repository, ApplyLocation, Signature};
+use git2::{Diff, Repository, ApplyLocation, Signature};
 use regex::{Regex, Captures};
 use lazy_static::lazy_static;
 use std::fmt::{self, Display, Formatter};
 
 pub struct EmailMessage {
-     upstream_commit: Oid,
      date: DateTime<FixedOffset>,
      message_summary: String,
      message_tail: String,
@@ -36,7 +35,7 @@ impl EmailMessage {
           let diff = Diff::from_buffer(msg.as_bytes())?;
 
           let mut lines = msg.lines().peekable();
-          let header = match_header_line(
+          match_header_line(
                &mut lines,
                "header",
                &*HEADER_LINE
@@ -103,9 +102,8 @@ impl EmailMessage {
               .map_err(|cause| {
                    InvalidEmailMessage::InvalidDate { cause, actual: date[1].into() }
               })?;
-          let upstream_commit = Oid::from_str(&header[1]).unwrap();
           Ok(EmailMessage {
-               diff, upstream_commit, date,
+               diff, date,
                message_summary: message_subject,
                message_tail: trailing_message,
                author_name: author_name.into(),

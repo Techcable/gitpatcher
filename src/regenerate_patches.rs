@@ -1,4 +1,4 @@
-use git2::{Repository, RepositoryState, Commit, DiffFormat, Tree, DiffOptions};
+use git2::{Repository, RepositoryState, Commit, DiffFormat, DiffOptions};
 use std::path::{Path, PathBuf};
 use slog::{Logger, debug, info, warn};
 use std::str::FromStr;
@@ -14,7 +14,6 @@ use itertools::Itertools;
 pub struct PatchFileSet<'a> {
     root_repo: &'a Repository,
     patch_dir: PathBuf,
-    head_patch_tree: Tree<'a>,
     patches: Vec<PatchFile>
 }
 impl<'a> PatchFileSet<'a> {
@@ -24,18 +23,9 @@ impl<'a> PatchFileSet<'a> {
             root_repo: target,
             patches: Vec::new(),
             patch_dir: patch_dir.into(),
-            head_patch_tree: Self::load_head_patch_tree(target, patch_dir)?
         };
         set.reload_files()?;
         Ok(set)
-    }
-    fn load_head_patch_tree(repo: &'a Repository, patch_dir: &Path) -> Result<Tree<'a>, PatchError> {
-        repo.head()
-            .and_then(|head| head.peel_to_tree())
-            .and_then(|head| head.get_path(patch_dir))
-            .and_then(|tree| tree.to_object(repo))
-            .and_then(|obj| obj.peel_to_tree())
-            .map_err(|cause| PatchError::MissingPatchDir { cause, patch_dir: patch_dir.into() })
     }
     pub fn reload_files(&mut self) -> Result<(), PatchError> {
         self.patches.clear();

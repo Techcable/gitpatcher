@@ -14,9 +14,8 @@ slog = "2.5.2"
 structopt = "0.3.14"
 structopt-derive = "0.4.7"
 
+
 [dependencies.git2]
-# TODO: Use relased crates.io version
-git = "https://github.com/rust-lang/git2-rs"
-rev = "d05202f3e842bb9cc08ed734d6537"
+version = "^0.13.6"
 # We don't need https
 default-features = false

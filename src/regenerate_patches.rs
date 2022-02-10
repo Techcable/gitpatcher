@@ -279,12 +279,15 @@ fn is_trivial_patch_change(diff: &str, git_ver: &str) -> bool {
     }
 }
 fn is_trivial_line(line: &[u8]) -> bool {
-    use regex::bytes::Regex;
+    use onig::Regex;
     lazy_static! {
         static ref TRIVIAL_PATTERN: Regex =
             Regex::new(r#"From [a-f0-9]+|--- a|\+\+\+ b|^.?index"#).unwrap();
     }
-    TRIVIAL_PATTERN.is_match(line)
+    std::str::from_utf8(line)
+        .ok()
+        .filter(|s| TRIVIAL_PATTERN.is_match(s))
+        .is_some()
 }
 
 #[derive(Debug)]

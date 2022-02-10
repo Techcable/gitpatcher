@@ -14,12 +14,9 @@ lazy_static = "1.4.0"
 itertools = "0.9.0"
 chrono = "0.4.11"
 
-[dependencies.regex]
-version = "^1"
-# Reduce size (at the expense of performance)
-# Right now we disable 'perf' and 'unicode'
+[dependencies.onig]
+version = "6"
 default-features = false
-features = ["std"]
 
 [dependencies.git2]
 version = "^0.13.6"

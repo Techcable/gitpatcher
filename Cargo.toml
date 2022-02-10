@@ -30,8 +30,8 @@ default-features = false
 members = ["bin"]
 
 [profile.release]
-# Optimize for size, not speed (note this is still way faster than -O0)
-opt-level = 's'
+# Counterintuitively, this produces smaller binaries
+opt-level = 3
 # Use (thin) link time optimization to enable more optimization opportunities
 # Note: Unlike regular LTO, thin LTO actually doesn't ruin compile times
 lto = "thin"

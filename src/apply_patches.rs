@@ -1,7 +1,7 @@
 use chrono::{DateTime, FixedOffset};
 use git2::{ApplyLocation, Diff, Repository, Signature};
 use lazy_static::lazy_static;
-use onig::{Captures, Regex};
+use regex::{Captures, Regex};
 use std::fmt::{self, Display, Formatter};
 
 pub struct EmailMessage {
@@ -44,7 +44,7 @@ impl EmailMessage {
         let author = match_header_line(&mut lines, "author", &*AUTHOR_LINE)?;
         let date = match_header_line(&mut lines, "date", &*DATE_LINE)?;
         let subject = match_header_line(&mut lines, "subject", &*SUBJECT_LINE)?;
-        let mut message_subject = String::from(subject.at(1).unwrap());
+        let mut message_subject = String::from(&subject[1]);
         loop {
             let line = lines.next().ok_or(InvalidEmailMessage::UnexpectedEof {
                 expected: "diff after subject",
@@ -84,12 +84,12 @@ impl EmailMessage {
         if trailing_message.ends_with('\n') {
             assert_eq!(trailing_message.pop(), Some('\n'));
         }
-        let author_name = author.at(1).unwrap();
-        let author_email = author.at(2).unwrap();
-        let date = DateTime::parse_from_rfc2822(date.at(1).unwrap()).map_err(|cause| {
+        let author_name = &author[1];
+        let author_email = &author[2];
+        let date = DateTime::parse_from_rfc2822(&date[1]).map_err(|cause| {
             InvalidEmailMessage::InvalidDate {
                 cause,
-                actual: date.at(1).unwrap().into(),
+                actual: date[1].into(),
             }
         })?;
         Ok(EmailMessage {

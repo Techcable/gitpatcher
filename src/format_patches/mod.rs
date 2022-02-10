@@ -57,7 +57,7 @@ impl<'repo> PatchFormatter<'repo> {
         Ok(())
     }
     fn generate(&mut self, index: usize, commit: &Commit<'repo>) -> Result<(), PatchFormatError> {
-        let message = CommitMessage::from_commit(&commit).map_err(|cause| {
+        let message = CommitMessage::from_commit(commit).map_err(|cause| {
             PatchFormatError::InvalidCommitMessage {
                 cause,
                 commit_id: commit.id(),
@@ -73,7 +73,7 @@ impl<'repo> PatchFormatter<'repo> {
         )?;
         let patch_name = message.patch_file_name(index as u32 + 1);
         let patch = self.out_dir.join(&patch_name);
-        let buf = diff.format_email(1, 1, &commit, None)?;
+        let buf = diff.format_email(1, 1, commit, None)?;
         let s = cleanup_patch(buf.as_str().unwrap()).map_err(|cause| {
             PatchFormatError::PatchCleanupError {
                 cause,

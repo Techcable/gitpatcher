@@ -151,7 +151,7 @@ pub fn regenerate_patches(
             let entry = head_tree.get_path(path)?;
             let child_tree = match filtered_tree {
                 None => {
-                    let tree = entry.to_object(&patch_set.root_repo)?.peel_to_tree()?;
+                    let tree = entry.to_object(patch_set.root_repo)?.peel_to_tree()?;
                     // Use our initial tree which is a copy of `patch_dir` itself
                     patch_set.root_repo.treebuilder(Some(&tree))?
                 }
@@ -214,7 +214,7 @@ pub fn regenerate_patches(
                 Some(delta) => delta,
                 None => continue, // no delta -> no changes to checkout
             };
-            if is_trivial_patch_change(&delta, &git_version) {
+            if is_trivial_patch_change(delta, &git_version) {
                 debug!(logger, "Ignoring trivial patch: {}", patch.path.display());
                 num_trivial += 1;
                 checkout_patches.path(&patch.path);

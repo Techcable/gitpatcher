@@ -12,7 +12,7 @@ impl<'a> CommitMessage<'a> {
     #[inline]
     #[allow(dead_code)]
     pub fn full(&self) -> &'a str {
-        &self.full
+        self.full
     }
     #[inline]
     pub fn summary(&self) -> &'a str {
@@ -32,7 +32,7 @@ impl<'a> CommitMessage<'a> {
             .find(|&(_, c)| !c.is_whitespace())
             .ok_or(InvalidCommitMessage::BlankMessage)?
             .0;
-        let summary_end = full.find('\n').unwrap_or_else(|| full.len());
+        let summary_end = full.find('\n').unwrap_or(full.len());
         let potential_tail = &full[summary_end..];
         // Tail starts at the first non-whitespace char past summary
         let tail_start = potential_tail
@@ -42,7 +42,7 @@ impl<'a> CommitMessage<'a> {
         // Strip trailing whitespace
         let tail_end = potential_tail
             .rfind(|c: char| !c.is_whitespace())
-            .unwrap_or_else(|| potential_tail.len())
+            .unwrap_or(potential_tail.len())
             + summary_end;
         Ok(CommitMessage {
             full,
@@ -74,7 +74,7 @@ impl<'a> CommitMessage<'a> {
         // Strip leading '-'
         let first_valid = sanitized_name
             .find(|c| c != '-')
-            .unwrap_or_else(|| sanitized_name.len());
+            .unwrap_or(sanitized_name.len());
         sanitized_name.drain(0..first_valid);
         sanitized_name.truncate(MAX_LENGTH);
         format!("{:04}-{}.patch", patch_no, sanitized_name)

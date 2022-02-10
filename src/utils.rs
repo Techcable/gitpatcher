@@ -78,7 +78,7 @@ impl<T: Clone> RememberLast<T> {
             self.last.push(element.clone());
         } else {
             self.last.rotate_left(1);
-            Clone::clone_from(self.last.last_mut().unwrap(), &element);
+            Clone::clone_from(self.last.last_mut().unwrap(), element);
         }
     }
     #[inline]

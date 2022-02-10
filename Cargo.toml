@@ -12,7 +12,7 @@ repository = "https://github.com/Techcable/gitpatcher"
 slog = "2.5.2"
 lazy_static = "1.4.0"
 itertools = "0.9.0"
-chrono = "0.4.11"
+time = { version = "0.3", features = ["macros", "parsing"] }
 
 [dependencies.regex]
 version = "^1"

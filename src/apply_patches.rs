@@ -1,11 +1,12 @@
-use chrono::{DateTime, FixedOffset};
+use time::{OffsetDateTime};
+use time::format_description::well_known::Rfc2822;
 use git2::{ApplyLocation, Diff, Repository, Signature};
 use lazy_static::lazy_static;
 use regex::{Captures, Regex};
 use std::fmt::{self, Display, Formatter};
 
 pub struct EmailMessage {
-    date: DateTime<FixedOffset>,
+    date: OffsetDateTime,
     message_summary: String,
     message_tail: String,
     author_name: String,
@@ -86,7 +87,7 @@ impl EmailMessage {
         }
         let author_name = &author[1];
         let author_email = &author[2];
-        let date = DateTime::parse_from_rfc2822(&date[1]).map_err(|cause| {
+        let date = OffsetDateTime::parse(&date[1], &Rfc2822).map_err(|cause| {
             InvalidEmailMessage::InvalidDate {
                 cause,
                 actual: date[1].into(),
@@ -116,9 +117,9 @@ impl EmailMessage {
     pub fn apply_commit(&self, target: &Repository) -> Result<(), git2::Error> {
         target.apply(&self.diff, ApplyLocation::Both, None)?;
         let time = git2::Time::new(
-            self.date.timestamp(),
+            self.date.unix_timestamp(),
             // seconds -> minutes
-            self.date.timezone().local_minus_utc() / 60,
+            self.date.offset().whole_minutes() as i32,
         );
         let author = Signature::new(&self.author_name, &self.author_email, &time)?;
         let tree = target.index()?.write_tree_to(target)?;
@@ -143,7 +144,7 @@ pub enum InvalidEmailMessage {
     },
     InvalidDate {
         actual: String,
-        cause: chrono::ParseError,
+        cause: time::error::Parse,
     },
     Git(git2::Error),
 }

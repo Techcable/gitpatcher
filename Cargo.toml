@@ -1,6 +1,6 @@
 [package]
 name = "gitpatcher"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Techcable <Techcable@techcable.net>"]
 edition = "2018"
 description = """A library that uses git to maintain a set of patches around a submodule"""

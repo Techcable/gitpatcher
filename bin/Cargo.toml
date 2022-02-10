@@ -14,9 +14,7 @@ path = "src/main.rs"
 [dependencies]
 gitpatcher = { version = "^0.1.0", path = ".." }
 slog = "2.5.2"
-structopt = "0.3.14"
-structopt-derive = "0.4.7"
-
+clap = { version = "3", features = ["derive"]}
 
 [dependencies.git2]
 version = "^0.13.6"

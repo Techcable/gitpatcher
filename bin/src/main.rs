@@ -8,8 +8,7 @@ use std::env;
 use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::process::exit;
-use structopt::StructOpt as IStructOpt;
-use structopt_derive::StructOpt;
+use clap::{Parser, Subcommand};
 
 pub struct TerminalDrain;
 impl Drain for TerminalDrain {
@@ -35,9 +34,14 @@ impl Drain for TerminalDrain {
     }
 }
 
-#[derive(StructOpt)]
-#[structopt(about = "A patching system based on git")]
-enum GitPatcher {
+#[derive(Parser, Debug)]
+#[clap(about = "A patching system based on git")]
+struct GitPatcher {
+    #[clap(subcommand)]
+    subcommand: PatchSubcommand,
+}
+#[derive(Subcommand, Debug)]
+enum PatchSubcommand {
     /// Apply a single patch file to the current repository
     ApplyPatch(ApplyPatchOpts),
     /// Apply an entire set of patch files to the specified repository
@@ -46,49 +50,49 @@ enum GitPatcher {
     RegeneratePatches(RegeneratePatchOpts),
 }
 
-#[derive(StructOpt)]
+#[derive(Parser, Debug)]
 struct ApplyPatchOpts {
     /// The patch file to apply
-    #[structopt(parse(from_os_str))]
+    #[clap(parse(from_os_str))]
     patch_file: PathBuf,
     /// The target repository to apply patches too
     ///
     /// Defaults to current directory if nothing is specified
-    #[structopt(long = "target", parse(from_os_str))]
+    #[clap(long = "target", parse(from_os_str))]
     target_repo: Option<PathBuf>,
 }
 
-#[derive(StructOpt)]
+#[derive(Parser, Debug)]
 struct ApplyAllPatches {
     /// The upstream reference to reset to before applying patches
-    #[structopt(long)]
+    #[clap(long)]
     upstream: Option<String>,
     /// The target repository to apply patches too
-    #[structopt(parse(from_os_str))]
+    #[clap(parse(from_os_str))]
     target_repo: PathBuf,
     /// The directory containing all the patch files
-    #[structopt(parse(from_os_str))]
+    #[clap(parse(from_os_str))]
     patch_dir: PathBuf,
 }
 
-#[derive(StructOpt)]
+#[derive(Parser, Debug)]
 struct RegeneratePatchOpts {
     /// The repository containing the patched changes
-    #[structopt(parse(from_os_str))]
+    #[clap(parse(from_os_str))]
     patched_repo: PathBuf,
     /// A upstream git reference to compare the patched repo against
     upstream: String,
     /// The directory to place the generated patches in
-    #[structopt(parse(from_os_str))]
+    #[clap(parse(from_os_str))]
     patch_dir: PathBuf,
 }
 
 fn main() {
-    let opt: GitPatcher = GitPatcher::from_args();
-    match opt {
-        GitPatcher::ApplyPatch(opts) => apply_patch(opts),
-        GitPatcher::RegeneratePatches(opts) => regenerate_patches(opts),
-        GitPatcher::ApplyAllPatches(opts) => apply_all_patches(opts),
+    let opt: GitPatcher = GitPatcher::parse();
+    match opt.subcommand {
+        PatchSubcommand::ApplyPatch(opts) => apply_patch(opts),
+        PatchSubcommand::RegeneratePatches(opts) => regenerate_patches(opts),
+        PatchSubcommand::ApplyAllPatches(opts) => apply_all_patches(opts),
     }
 }
 

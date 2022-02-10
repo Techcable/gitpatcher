@@ -1,15 +1,15 @@
-use std::str::Lines;
 use std::iter::Peekable;
+use std::str::Lines;
 
 pub struct SimpleParser<'a> {
     lines: Peekable<Lines<'a>>,
-    line_number: usize
+    line_number: usize,
 }
 impl<'a> SimpleParser<'a> {
     pub fn new(s: &'a str) -> Self {
         SimpleParser {
             lines: s.lines().peekable(),
-            line_number: 1
+            line_number: 1,
         }
     }
     #[inline]
@@ -23,12 +23,15 @@ impl<'a> SimpleParser<'a> {
         Ok(line)
     }
     pub fn take_while<P, H>(&mut self, mut matcher: P, mut handler: H)
-        where P: FnMut(&str) -> bool, H: FnMut(&str) {
+    where
+        P: FnMut(&str) -> bool,
+        H: FnMut(&str),
+    {
         while let Ok(line) = self.peek() {
             if matcher(line) {
                 handler(self.pop().unwrap());
             } else {
-                break
+                break;
             }
         }
     }
@@ -38,12 +41,19 @@ impl<'a> SimpleParser<'a> {
     pub fn skip_whitespace(&mut self) {
         self.skip_while(|line| line.chars().all(|c| c.is_whitespace()));
     }
-    pub fn take_until<P, H>(&mut self, mut matcher: P, mut handler: H) -> Result<&'a str, UnexpectedEof>
-        where P: FnMut(&str) -> bool, H: FnMut(&str) {
+    pub fn take_until<P, H>(
+        &mut self,
+        mut matcher: P,
+        mut handler: H,
+    ) -> Result<&'a str, UnexpectedEof>
+    where
+        P: FnMut(&str) -> bool,
+        H: FnMut(&str),
+    {
         loop {
             let line = self.pop()?;
             if matcher(line) {
-                return Ok(line)
+                return Ok(line);
             } else {
                 handler(line);
             }
@@ -59,7 +69,8 @@ impl<T: Clone> RememberLast<T> {
     pub fn new(limit: usize) -> Self {
         assert!(limit > 0);
         RememberLast {
-            limit, last: Vec::with_capacity(limit)
+            limit,
+            last: Vec::with_capacity(limit),
         }
     }
     pub fn remember(&mut self, element: &T) {
@@ -67,10 +78,7 @@ impl<T: Clone> RememberLast<T> {
             self.last.push(element.clone());
         } else {
             self.last.rotate_left(1);
-            Clone::clone_from(
-                self.last.last_mut().unwrap(),
-                &element
-            );
+            Clone::clone_from(self.last.last_mut().unwrap(), &element);
         }
     }
     #[inline]
@@ -88,13 +96,18 @@ impl<T: Clone> RememberLast<T> {
         self.last.len()
     }
 }
-pub struct IterRememberLast<I: Iterator> where I::Item: Clone {
+pub struct IterRememberLast<I: Iterator>
+where
+    I::Item: Clone,
+{
     remember: RememberLast<I::Item>,
-    iter: I
+    iter: I,
 }
-impl<I: Iterator> IterRememberLast<I> where I::Item: Clone {
-}
-impl<I: Iterator> Iterator for IterRememberLast<I> where I::Item: Clone {
+impl<I: Iterator> IterRememberLast<I> where I::Item: Clone {}
+impl<I: Iterator> Iterator for IterRememberLast<I>
+where
+    I::Item: Clone,
+{
     type Item = I::Item;
 
     #[inline]
@@ -107,7 +120,6 @@ impl<I: Iterator> Iterator for IterRememberLast<I> where I::Item: Clone {
         }
     }
 }
-
 
 #[derive(Debug)]
 pub struct UnexpectedEof;

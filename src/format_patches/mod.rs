@@ -1,15 +1,15 @@
-use git2::{Commit, Oid, Error, DiffOptions, Repository};
-use std::path::PathBuf;
 use crate::format_patches::format::{CommitMessage, InvalidCommitMessage};
-use std::fmt::{Display, Formatter};
-use std::fmt;
-use slog::{Logger, info};
 use crate::utils::SimpleParser;
+use git2::{Commit, DiffOptions, Error, Oid, Repository};
+use slog::{info, Logger};
+use std::fmt;
+use std::fmt::{Display, Formatter};
+use std::path::PathBuf;
 
 mod format;
 
 pub struct FormatOptions {
-    pub diff_opts: DiffOptions
+    pub diff_opts: DiffOptions,
 }
 impl Default for FormatOptions {
     fn default() -> Self {
@@ -24,14 +24,23 @@ pub struct PatchFormatter<'repo> {
     last_commit: Commit<'repo>,
     out_dir: PathBuf,
     opts: FormatOptions,
-    target: &'repo Repository
+    target: &'repo Repository,
 }
 impl<'repo> PatchFormatter<'repo> {
-    pub fn new(logger: Logger, out_dir: PathBuf, target: &'repo Repository, base: Commit<'repo>, opts: FormatOptions)
-               -> Result<Self, PatchFormatError> {
+    pub fn new(
+        logger: Logger,
+        out_dir: PathBuf,
+        target: &'repo Repository,
+        base: Commit<'repo>,
+        opts: FormatOptions,
+    ) -> Result<Self, PatchFormatError> {
         Ok(PatchFormatter {
-            logger, opts, out_dir, last_commit: base.clone(),
-            base, target,
+            logger,
+            opts,
+            out_dir,
+            last_commit: base.clone(),
+            base,
+            target,
         })
     }
     pub fn generate_all(&mut self) -> Result<(), PatchFormatError> {
@@ -48,28 +57,32 @@ impl<'repo> PatchFormatter<'repo> {
         Ok(())
     }
     fn generate(&mut self, index: usize, commit: &Commit<'repo>) -> Result<(), PatchFormatError> {
-        let message = CommitMessage::from_commit(&commit)
-            .map_err(|cause| PatchFormatError::InvalidCommitMessage {
-                cause, commit_id: commit.id()
-            })?;
+        let message = CommitMessage::from_commit(&commit).map_err(|cause| {
+            PatchFormatError::InvalidCommitMessage {
+                cause,
+                commit_id: commit.id(),
+            }
+        })?;
         let last_tree = self.last_commit.tree()?;
         let tree = commit.tree()?;
         let mut diff = self.target.diff_tree_to_tree(
             Some(&last_tree),
             Some(&tree),
             // TODO: Why does diff_opts need to be mutable?
-            Some(&mut self.opts.diff_opts)
+            Some(&mut self.opts.diff_opts),
         )?;
         let patch_name = message.patch_file_name(index as u32 + 1);
         let patch = self.out_dir.join(&patch_name);
         let buf = diff.format_email(1, 1, &commit, None)?;
         let s = cleanup_patch(buf.as_str().unwrap()).map_err(|cause| {
             PatchFormatError::PatchCleanupError {
-                cause, patch_file: patch.clone()
+                cause,
+                patch_file: patch.clone(),
             }
         })?;
         std::fs::write(&patch, s).map_err(|cause| PatchFormatError::PatchWriteError {
-            cause, patch_file: patch.clone()
+            cause,
+            patch_file: patch.clone(),
         })?;
         info!(self.logger, "Generating patch: {}", patch_name);
         Ok(())
@@ -88,10 +101,11 @@ fn cleanup_patch(s: &str) -> Result<String, CleanupPatchErr> {
      * the summary line (Subject: [PATCH]),
      * and the rest of the commit message
      */
-    let subject_line = parser.take_until(
-        |line| line.starts_with("Subject: [PATCH]"),
-        &mut pushln
-    ).map_err(|_| CleanupPatchErr::UnexpectedEof { expected: "Subject line" })?;
+    let subject_line = parser
+        .take_until(|line| line.starts_with("Subject: [PATCH]"), &mut pushln)
+        .map_err(|_| CleanupPatchErr::UnexpectedEof {
+            expected: "Subject line",
+        })?;
     pushln(subject_line);
     parser.skip_whitespace();
     /*
@@ -99,13 +113,17 @@ fn cleanup_patch(s: &str) -> Result<String, CleanupPatchErr> {
      * Skip until we see start of diff stats `---`
      */
     let mut trailing_commit_message = String::new();
-    parser.take_until(
-        |line| line.starts_with("---"),
-        |line| {
-            trailing_commit_message.push_str(line);
-            trailing_commit_message.push('\n');
-        }
-    ).map_err(|_| CleanupPatchErr::UnexpectedEof { expected: "Diff stats" })?;
+    parser
+        .take_until(
+            |line| line.starts_with("---"),
+            |line| {
+                trailing_commit_message.push_str(line);
+                trailing_commit_message.push('\n');
+            },
+        )
+        .map_err(|_| CleanupPatchErr::UnexpectedEof {
+            expected: "Diff stats",
+        })?;
     let trailing_commit_message = trailing_commit_message.trim();
     pushln("");
     if !trailing_commit_message.is_empty() {
@@ -113,10 +131,11 @@ fn cleanup_patch(s: &str) -> Result<String, CleanupPatchErr> {
     }
     pushln("");
     // Ignore until we see a `diff --git a/file.txt b/file.txt` line
-    let diff_line = parser.take_until(
-        |line| line.starts_with("diff"),
-        |_| {}
-    ).map_err(|_| CleanupPatchErr::UnexpectedEof { expected: "Diff line" })?;
+    let diff_line = parser
+        .take_until(|line| line.starts_with("diff"), |_| {})
+        .map_err(|_| CleanupPatchErr::UnexpectedEof {
+            expected: "Diff line",
+        })?;
     pushln(diff_line);
     // Dump all remaining lines
     while let Ok(line) = parser.pop() {
@@ -132,47 +151,48 @@ pub enum CleanupPatchErr {
     },
     InvalidLine {
         line_number: usize,
-        message: & 'static str
-    }
+        message: &'static str,
+    },
 }
 
 #[derive(Debug)]
 pub enum PatchFormatError {
     InvalidCommitMessage {
         commit_id: Oid,
-        cause: InvalidCommitMessage
+        cause: InvalidCommitMessage,
     },
     PatchWriteError {
         patch_file: PathBuf,
-        cause: std::io::Error
+        cause: std::io::Error,
     },
     PatchCleanupError {
         patch_file: PathBuf,
-        cause: CleanupPatchErr
+        cause: CleanupPatchErr,
     },
-    InternalGit(git2::Error)
+    InternalGit(git2::Error),
 }
 impl Display for PatchFormatError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             PatchFormatError::InvalidCommitMessage { commit_id, cause } => {
                 write!(f, "Invalid commit message for {}: {}", commit_id, cause)
-            },
+            }
             PatchFormatError::PatchWriteError { patch_file, cause } => {
                 write!(f, "Error writing to {}: {}", patch_file.display(), cause)
-            },
-            PatchFormatError::InternalGit(cause) => {
-                Display::fmt(cause, f)
-            },
+            }
+            PatchFormatError::InternalGit(cause) => Display::fmt(cause, f),
             PatchFormatError::PatchCleanupError { patch_file, cause } => {
                 write!(f, "Internal error cleaning patch {}:", patch_file.display())?;
                 match cause {
                     CleanupPatchErr::UnexpectedEof { expected } => {
                         writeln!(f, "Unexpected EOF, expected {}", expected)
-                    },
-                    CleanupPatchErr::InvalidLine { line_number, message } => {
+                    }
+                    CleanupPatchErr::InvalidLine {
+                        line_number,
+                        message,
+                    } => {
                         writeln!(f, "Invalid line @ {}: {}", line_number, message)
-                    },
+                    }
                 }
             }
         }

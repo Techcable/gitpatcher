@@ -1,20 +1,20 @@
-use git2::{Repository, RepositoryState, Commit, DiffFormat, DiffOptions};
-use std::path::{Path, PathBuf};
-use slog::{Logger, debug, info, warn};
-use std::str::FromStr;
+use crate::format_patches::{FormatOptions, PatchFormatError, PatchFormatter};
+use crate::utils::RememberLast;
 use git2::build::CheckoutBuilder;
-use crate::format_patches::{FormatOptions, PatchFormatter, PatchFormatError};
-use std::collections::{HashMap};
-use lazy_static::lazy_static;
-use std::io::{BufReader, BufRead};
-use std::fs::File;
-use crate::utils::{RememberLast};
+use git2::{Commit, DiffFormat, DiffOptions, Repository, RepositoryState};
 use itertools::Itertools;
+use lazy_static::lazy_static;
+use slog::{debug, info, warn, Logger};
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 pub struct PatchFileSet<'a> {
     root_repo: &'a Repository,
     patch_dir: PathBuf,
-    patches: Vec<PatchFile>
+    patches: Vec<PatchFile>,
 }
 impl<'a> PatchFileSet<'a> {
     pub fn load(target: &'a Repository, patch_dir: &Path) -> Result<Self, PatchError> {
@@ -36,8 +36,11 @@ impl<'a> PatchFileSet<'a> {
                 None => continue, // Ignore non-UTF8 paths
             };
             // Ignore all files that aren't patches
-            if !file_name.ends_with(".patch") { continue }
-            self.patches.push(PatchFile::parse(&self.patch_dir, &file_name)?);
+            if !file_name.ends_with(".patch") {
+                continue;
+            }
+            self.patches
+                .push(PatchFile::parse(&self.patch_dir, &file_name)?);
         }
         self.patches.sort_by_key(|patch| patch.index);
         Ok(())
@@ -62,23 +65,27 @@ pub struct PatchFile {
 impl PatchFile {
     fn parse(parent: &Path, file_name: &str) -> Result<Self, PatchError> {
         // Must match ASCII regex `[\d]{4}-(commit_name).patch`
-        if file_name.len() >= 5 &&
-            file_name.as_bytes()[4] == b'-' &&
-            file_name.ends_with(".patch") {
-            let index = usize::from_str(&file_name[..4])
-                .map_err(|_| PatchError::InvalidPatchName { name: file_name.into() })?;
+        if file_name.len() >= 5 && file_name.as_bytes()[4] == b'-' && file_name.ends_with(".patch")
+        {
+            let index =
+                usize::from_str(&file_name[..4]).map_err(|_| PatchError::InvalidPatchName {
+                    name: file_name.into(),
+                })?;
             Ok(PatchFile {
-                index, path: parent.join(file_name)
+                index,
+                path: parent.join(file_name),
             })
         } else {
-            Err(PatchError::InvalidPatchName { name: file_name.into() })
+            Err(PatchError::InvalidPatchName {
+                name: file_name.into(),
+            })
         }
     }
 }
 
 #[derive(Default)]
 pub struct RegenerateOptions {
-    pub format_opts: FormatOptions
+    pub format_opts: FormatOptions,
 }
 
 pub fn regenerate_patches(
@@ -86,12 +93,18 @@ pub fn regenerate_patches(
     patch_set: &mut PatchFileSet,
     target: &Repository,
     logger: Logger,
-    options: RegenerateOptions
+    options: RegenerateOptions,
 ) -> Result<(), PatchError> {
-    let target_name = target.path().file_name()
+    let target_name = target
+        .path()
+        .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or_else(|| panic!("Invalid path for target repo: {}", target.path().display()));
-    info!(logger, "Formatting patches for {}", patch_set.patch_dir.display());
+    info!(
+        logger,
+        "Formatting patches for {}",
+        patch_set.patch_dir.display()
+    );
     // Remove old patches
     match target.state() {
         RepositoryState::Rebase | RepositoryState::RebaseInteractive => {
@@ -101,12 +114,12 @@ pub fn regenerate_patches(
             for patch in &patch_set.patches[..next] {
                 std::fs::remove_file(&patch.path)?;
             }
-        },
+        }
         RepositoryState::Clean => {
             for patch in &patch_set.patches {
                 std::fs::remove_file(&patch.path)?;
             }
-        },
+        }
         state => {
             return Err(PatchError::PatchedRepoInvalidState { state });
         }
@@ -119,8 +132,9 @@ pub fn regenerate_patches(
             patch_set.patch_dir.clone(),
             target,
             base.clone(),
-            options.format_opts
-        )?.generate_all()?;
+            options.format_opts,
+        )?
+        .generate_all()?;
         patch_set.reload_files()?;
     }
 
@@ -130,37 +144,36 @@ pub fn regenerate_patches(
     {
         let head_tree = patch_set.root_repo.head()?.peel_to_tree()?;
         let mut filtered_tree = None;
-        let mut parents = patch_set.patch_dir.ancestors()
-            .collect_vec();
+        let mut parents = patch_set.patch_dir.ancestors().collect_vec();
         let len = parents.len();
         parents.truncate(len - 1); // Trim last (empty)
         for path in parents {
             let entry = head_tree.get_path(path)?;
             let child_tree = match filtered_tree {
                 None => {
-                    let tree = entry.to_object(&patch_set.root_repo)?
-                        .peel_to_tree()?;
+                    let tree = entry.to_object(&patch_set.root_repo)?.peel_to_tree()?;
                     // Use our initial tree which is a copy of `patch_dir` itself
                     patch_set.root_repo.treebuilder(Some(&tree))?
-                },
-                Some(existing_tree) => {
-                    existing_tree
                 }
+                Some(existing_tree) => existing_tree,
             };
             let mut builder = patch_set.root_repo.treebuilder(None)?;
             builder.insert(
-                path.file_name().unwrap_or_else(|| panic!("Invalid parent {:?}", path)),
+                path.file_name()
+                    .unwrap_or_else(|| panic!("Invalid parent {:?}", path)),
                 child_tree.write()?,
-                entry.filemode()
+                entry.filemode(),
             )?;
             filtered_tree = Some(builder);
         }
-        let filtered_tree = patch_set.root_repo.find_tree(filtered_tree.unwrap().write()?)?;
+        let filtered_tree = patch_set
+            .root_repo
+            .find_tree(filtered_tree.unwrap().write()?)?;
         let mut ops = DiffOptions::new();
         ops.ignore_whitespace_eol(true);
-        let diff = patch_set.root_repo.diff_tree_to_index(
-            Some(&filtered_tree), None, None
-        )?;
+        let diff = patch_set
+            .root_repo
+            .diff_tree_to_index(Some(&filtered_tree), None, None)?;
         let mut deltas_by_path = HashMap::new();
         diff.print(DiffFormat::Patch, |delta, _hunk, line| {
             let buffer = deltas_by_path
@@ -193,7 +206,9 @@ pub fn regenerate_patches(
                     &last[0]
                 } else {
                     &last[1]
-                }.trim().to_string()
+                }
+                .trim()
+                .to_string()
             };
             let delta = match deltas_by_path.get(&patch.path) {
                 Some(delta) => delta,
@@ -206,7 +221,9 @@ pub fn regenerate_patches(
             }
         }
         if num_trivial > 0 {
-            patch_set.root_repo.checkout_head(Some(&mut checkout_patches))?;
+            patch_set
+                .root_repo
+                .checkout_head(Some(&mut checkout_patches))?;
         }
     }
 
@@ -221,7 +238,7 @@ fn is_trivial_patch_change(diff: &str, git_ver: &str) -> bool {
     for line in lines {
         // We only care about lines that are (+|-)
         if !line.starts_with(CHANGE_MARKERS) {
-            continue
+            continue;
         }
         if !is_trivial_line(line.as_bytes()) {
             // We found a non-trivial change in this patch
@@ -245,9 +262,10 @@ fn is_trivial_patch_change(diff: &str, git_ver: &str) -> bool {
                  * The last change was to the git version
                  * Strip any other related changes
                  */
-                if remember.len() + ignored_changes >= 2 &&
-                    remember.back(ignored_changes)[1..].trim() == "--"
-                    && remember.back(ignored_changes + 2)[1..].trim() == "--" {
+                if remember.len() + ignored_changes >= 2
+                    && remember.back(ignored_changes)[1..].trim() == "--"
+                    && remember.back(ignored_changes + 2)[1..].trim() == "--"
+                {
                     // They also changed the -- at the end
                     ignored_changes += 3;
                 } else {
@@ -263,7 +281,8 @@ fn is_trivial_patch_change(diff: &str, git_ver: &str) -> bool {
 fn is_trivial_line(line: &[u8]) -> bool {
     use regex::bytes::Regex;
     lazy_static! {
-        static ref TRIVIAL_PATTERN: Regex = Regex::new(r#"From [a-f0-9]+|--- a|\+\+\+ b|^.?index"#).unwrap();
+        static ref TRIVIAL_PATTERN: Regex =
+            Regex::new(r#"From [a-f0-9]+|--- a|\+\+\+ b|^.?index"#).unwrap();
     }
     TRIVIAL_PATTERN.is_match(line)
 }
@@ -272,19 +291,19 @@ fn is_trivial_line(line: &[u8]) -> bool {
 pub enum PatchError {
     /// The patched repo was in an invalid [RepositoryState]
     PatchedRepoInvalidState {
-        state: RepositoryState
+        state: RepositoryState,
     },
     InvalidPatchName {
-        name: String
+        name: String,
     },
     PatchFormatFailed(PatchFormatError),
     MissingPatchDir {
         patch_dir: PathBuf,
-        cause: git2::Error
+        cause: git2::Error,
     },
     /// An unexpected error occurred using git
     Git(git2::Error),
-    Io(std::io::Error)
+    Io(std::io::Error),
 }
 impl From<PatchFormatError> for PatchError {
     fn from(cause: PatchFormatError) -> Self {
@@ -306,19 +325,19 @@ impl std::fmt::Display for PatchError {
         match self {
             PatchError::PatchedRepoInvalidState { state } => {
                 write!(f, "Target repo is in unexpected state: {:?}", state)
-            },
+            }
             PatchError::PatchFormatFailed(cause) => {
                 write!(f, "Failed to format patches: {}", cause)
-            },
+            }
             PatchError::InvalidPatchName { name } => {
                 write!(f, "Invalid name for patch: {:?}", name)
-            },
+            }
             PatchError::Git(cause) => {
                 write!(f, "Unexpected git error: {}", cause)
-            },
+            }
             PatchError::Io(cause) => {
                 write!(f, "Unexpected IO error: {}", cause)
-            },
+            }
             PatchError::MissingPatchDir { patch_dir, cause } => {
                 write!(f, "Missing patch dir {}: {}", patch_dir.display(), cause)
             }

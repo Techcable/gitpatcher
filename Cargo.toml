@@ -11,7 +11,7 @@ repository = "https://github.com/Techcable/gitpatcher"
 [dependencies]
 slog = "2.5.2"
 lazy_static = "1.4.0"
-itertools = "0.9.0"
+itertools = "0.10"
 time = { version = "0.3", features = ["macros", "parsing"] }
 
 [dependencies.regex]

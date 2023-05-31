@@ -20,7 +20,7 @@ impl<'a> CommitMessage<'a> {
     }
     #[inline]
     #[allow(dead_code)]
-    pub fn tail(&self) -> &'a str {
+    pub fn body(&self) -> &'a str {
         &self.full[self.tail_range.clone()]
     }
     pub fn parse(full: &'a str) -> Result<Self, InvalidCommitMessage> {
@@ -33,21 +33,21 @@ impl<'a> CommitMessage<'a> {
             .ok_or(InvalidCommitMessage::BlankMessage)?
             .0;
         let summary_end = full.find('\n').unwrap_or(full.len());
-        let potential_tail = &full[summary_end..];
-        // Tail starts at the first non-whitespace char past summary
-        let tail_start = potential_tail
+        let potential_body = &full[summary_end..];
+        // Body starts at the first non-whitespace char past summary
+        let body_start = potential_body
             .find(|c: char| !c.is_whitespace())
             .unwrap_or(0)
             + summary_end;
         // Strip trailing whitespace
-        let tail_end = potential_tail
+        let body_end = potential_body
             .rfind(|c: char| !c.is_whitespace())
-            .unwrap_or(potential_tail.len())
+            .unwrap_or(potential_body.len())
             + summary_end;
         Ok(CommitMessage {
             full,
             summary_range: summary_start..summary_end,
-            tail_range: tail_start..tail_end,
+            tail_range: body_start..body_end,
         })
     }
     pub fn from_commit(commit: &'a Commit) -> Result<Self, InvalidCommitMessage> {

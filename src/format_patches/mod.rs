@@ -1,6 +1,7 @@
 use crate::format_patches::format::{CommitMessage, InvalidCommitMessage};
 use crate::utils::SimpleParser;
-use git2::{Commit, DiffOptions, Error, Oid, Repository};
+use bstr::{BStr, BString, ByteSlice, ByteVec};
+use git2::{Commit, DiffOptions, EmailCreateOptions, Error, Oid, Repository};
 use slog::{info, Logger};
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -9,12 +10,19 @@ use std::path::PathBuf;
 mod format;
 
 pub struct FormatOptions {
-    pub diff_opts: DiffOptions,
+    email_opts: EmailCreateOptions,
+}
+
+impl FormatOptions {
+    pub fn diff_opts(&mut self) -> &mut DiffOptions {
+        self.email_opts.diff_options()
+    }
 }
 impl Default for FormatOptions {
     fn default() -> Self {
-        let diff_opts = DiffOptions::new();
-        FormatOptions { diff_opts }
+        FormatOptions {
+            email_opts: EmailCreateOptions::new(),
+        }
     }
 }
 
@@ -65,16 +73,25 @@ impl<'repo> PatchFormatter<'repo> {
         })?;
         let last_tree = self.last_commit.tree()?;
         let tree = commit.tree()?;
-        let mut diff = self.target.diff_tree_to_tree(
+        let diff = self.target.diff_tree_to_tree(
             Some(&last_tree),
             Some(&tree),
             // TODO: Why does diff_opts need to be mutable?
-            Some(&mut self.opts.diff_opts),
+            Some(self.opts.diff_opts()),
         )?;
         let patch_name = message.patch_file_name(index as u32 + 1);
         let patch = self.out_dir.join(&patch_name);
-        let buf = diff.format_email(1, 1, commit, None)?;
-        let s = cleanup_patch(buf.as_str().unwrap()).map_err(|cause| {
+        let email = git2::Email::from_diff(
+            &diff,
+            /* patch_idx */ 1,
+            /* patch_count */ 1,
+            /* commit_id */ &commit.id(),
+            /* summary */ message.summary(),
+            /* body */ message.body(),
+            /* author */ &commit.author(),
+            &mut self.opts.email_opts,
+        )?;
+        let s = cleanup_patch(BStr::new(email.as_slice())).map_err(|cause| {
             PatchFormatError::PatchCleanupError {
                 cause,
                 patch_file: patch.clone(),
@@ -89,11 +106,11 @@ impl<'repo> PatchFormatter<'repo> {
     }
 }
 
-fn cleanup_patch(s: &str) -> Result<String, CleanupPatchErr> {
-    let mut result = String::new();
-    let mut pushln = |line: &str| {
+fn cleanup_patch(s: &BStr) -> Result<BString, CleanupPatchErr> {
+    let mut result = BString::new(Vec::new());
+    let mut pushln = |line: &BStr| {
         result.push_str(line);
-        result.push('\n');
+        result.push_char('\n');
     };
     let mut parser = SimpleParser::new(s);
     /*
@@ -102,7 +119,7 @@ fn cleanup_patch(s: &str) -> Result<String, CleanupPatchErr> {
      * and the rest of the commit message
      */
     let subject_line = parser
-        .take_until(|line| line.starts_with("Subject: [PATCH]"), &mut pushln)
+        .take_until(|line| line.starts_with(b"Subject: [PATCH]"), &mut pushln)
         .map_err(|_| CleanupPatchErr::UnexpectedEof {
             expected: "Subject line",
         })?;
@@ -112,27 +129,27 @@ fn cleanup_patch(s: &str) -> Result<String, CleanupPatchErr> {
      * libgit2 generates diff stats, which we don't care about
      * Skip until we see start of diff stats `---`
      */
-    let mut trailing_commit_message = String::new();
+    let mut trailing_commit_message = BString::new(Vec::new());
     parser
         .take_until(
-            |line| line.starts_with("---"),
+            |line| line.starts_with(b"---"),
             |line| {
                 trailing_commit_message.push_str(line);
-                trailing_commit_message.push('\n');
+                trailing_commit_message.push_char('\n');
             },
         )
         .map_err(|_| CleanupPatchErr::UnexpectedEof {
             expected: "Diff stats",
         })?;
     let trailing_commit_message = trailing_commit_message.trim();
-    pushln("");
+    pushln(BStr::new(""));
     if !trailing_commit_message.is_empty() {
-        pushln(trailing_commit_message);
+        pushln(BStr::new(trailing_commit_message));
     }
-    pushln("");
+    pushln(BStr::new(""));
     // Ignore until we see a `diff --git a/file.txt b/file.txt` line
     let diff_line = parser
-        .take_until(|line| line.starts_with("diff"), |_| {})
+        .take_until(|line| line.starts_with(b"diff"), |_| {})
         .map_err(|_| CleanupPatchErr::UnexpectedEof {
             expected: "Diff line",
         })?;
@@ -140,7 +157,7 @@ fn cleanup_patch(s: &str) -> Result<String, CleanupPatchErr> {
     // Dump all remaining lines
     while let Ok(line) = parser.pop() {
         result.push_str(line);
-        result.push('\n')
+        result.push_char('\n')
     }
     Ok(result)
 }
@@ -151,6 +168,7 @@ pub enum CleanupPatchErr {
     },
     InvalidLine {
         line_number: usize,
+
         message: &'static str,
     },
 }

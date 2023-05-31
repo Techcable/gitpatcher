@@ -1,3 +1,4 @@
+use clap::{Parser, Subcommand};
 use git2::build::CheckoutBuilder;
 use git2::{ObjectType, Repository, ResetType};
 use gitpatcher::apply_patches::EmailMessage;
@@ -8,7 +9,6 @@ use std::env;
 use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::process::exit;
-use clap::{Parser, Subcommand};
 
 pub struct TerminalDrain;
 impl Drain for TerminalDrain {
@@ -53,12 +53,11 @@ enum PatchSubcommand {
 #[derive(Parser, Debug)]
 struct ApplyPatchOpts {
     /// The patch file to apply
-    #[clap(parse(from_os_str))]
     patch_file: PathBuf,
     /// The target repository to apply patches too
     ///
     /// Defaults to current directory if nothing is specified
-    #[clap(long = "target", parse(from_os_str))]
+    #[clap(long = "target")]
     target_repo: Option<PathBuf>,
 }
 
@@ -68,22 +67,18 @@ struct ApplyAllPatches {
     #[clap(long)]
     upstream: Option<String>,
     /// The target repository to apply patches too
-    #[clap(parse(from_os_str))]
     target_repo: PathBuf,
     /// The directory containing all the patch files
-    #[clap(parse(from_os_str))]
     patch_dir: PathBuf,
 }
 
 #[derive(Parser, Debug)]
 struct RegeneratePatchOpts {
     /// The repository containing the patched changes
-    #[clap(parse(from_os_str))]
     patched_repo: PathBuf,
     /// A upstream git reference to compare the patched repo against
     upstream: String,
     /// The directory to place the generated patches in
-    #[clap(parse(from_os_str))]
     patch_dir: PathBuf,
 }
 

@@ -9,10 +9,12 @@ license = "MIT"
 repository = "https://github.com/Techcable/gitpatcher"
 
 [dependencies]
-slog = "2.5.2"
 lazy_static = "1.4.0"
 itertools = "0.10"
+bstr = "1.5"
 time = { version = "0.3", features = ["macros", "parsing"] }
+slog.workspace = true
+git2.workspace = true
 
 [dependencies.regex]
 version = "^1"
@@ -21,13 +23,17 @@ version = "^1"
 default-features = false
 features = ["std"]
 
-[dependencies.git2]
-version = "^0.13.6"
-# We don't need https
-default-features = false
 
 [workspace]
 members = ["bin"]
+
+[workspace.dependencies]
+slog = "2.7"
+
+[workspace.dependencies.git2]
+version = "0.17"
+# We don't need https
+default-features = false
 
 [profile.release]
 # Counterintuitively, this produces smaller binaries

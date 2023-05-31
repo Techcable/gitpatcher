@@ -1,32 +1,35 @@
+use bstr::{BStr, ByteSlice};
 use std::iter::Peekable;
-use std::str::Lines;
 
 pub struct SimpleParser<'a> {
-    lines: Peekable<Lines<'a>>,
+    lines: Peekable<bstr::Lines<'a>>,
     line_number: usize,
 }
 impl<'a> SimpleParser<'a> {
-    pub fn new(s: &'a str) -> Self {
+    pub fn new(s: &'a BStr) -> Self {
         SimpleParser {
             lines: s.lines().peekable(),
             line_number: 1,
         }
     }
     #[inline]
-    pub fn peek(&mut self) -> Result<&'a str, UnexpectedEof> {
-        self.lines.peek().cloned().ok_or(UnexpectedEof)
+    pub fn peek(&mut self) -> Result<&'a BStr, UnexpectedEof> {
+        match self.lines.peek() {
+            Some(&line) => Ok(BStr::new(line)),
+            None => Err(UnexpectedEof),
+        }
     }
     #[inline]
-    pub fn pop(&mut self) -> Result<&'a str, UnexpectedEof> {
+    pub fn pop(&mut self) -> Result<&'a BStr, UnexpectedEof> {
         let line = self.lines.next().ok_or(UnexpectedEof)?;
         self.line_number += 1;
-        Ok(line)
+        Ok(BStr::new(line))
     }
-    pub fn take_while<P, H>(&mut self, mut matcher: P, mut handler: H)
-    where
-        P: FnMut(&str) -> bool,
-        H: FnMut(&str),
-    {
+    pub fn take_while(
+        &mut self,
+        mut matcher: impl FnMut(&BStr) -> bool,
+        mut handler: impl FnMut(&BStr),
+    ) {
         while let Ok(line) = self.peek() {
             if matcher(line) {
                 handler(self.pop().unwrap());
@@ -35,21 +38,17 @@ impl<'a> SimpleParser<'a> {
             }
         }
     }
-    pub fn skip_while<P: FnMut(&str) -> bool>(&mut self, matcher: P) {
+    pub fn skip_while<P: FnMut(&BStr) -> bool>(&mut self, matcher: P) {
         self.take_while(matcher, |_| {});
     }
     pub fn skip_whitespace(&mut self) {
         self.skip_while(|line| line.chars().all(|c| c.is_whitespace()));
     }
-    pub fn take_until<P, H>(
+    pub fn take_until(
         &mut self,
-        mut matcher: P,
-        mut handler: H,
-    ) -> Result<&'a str, UnexpectedEof>
-    where
-        P: FnMut(&str) -> bool,
-        H: FnMut(&str),
-    {
+        mut matcher: impl FnMut(&BStr) -> bool,
+        mut handler: impl FnMut(&BStr),
+    ) -> Result<&'a BStr, UnexpectedEof> {
         loop {
             let line = self.pop()?;
             if matcher(line) {

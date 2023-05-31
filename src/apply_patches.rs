@@ -1,9 +1,9 @@
-use time::{OffsetDateTime};
-use time::format_description::well_known::Rfc2822;
 use git2::{ApplyLocation, Diff, Repository, Signature};
 use lazy_static::lazy_static;
 use regex::{Captures, Regex};
 use std::fmt::{self, Display, Formatter};
+use time::format_description::well_known::Rfc2822;
+use time::OffsetDateTime;
 
 pub struct EmailMessage {
     date: OffsetDateTime,
@@ -41,10 +41,10 @@ impl EmailMessage {
         let diff = Diff::from_buffer(msg.as_bytes())?;
 
         let mut lines = msg.lines().peekable();
-        match_header_line(&mut lines, "header", &*HEADER_LINE)?;
-        let author = match_header_line(&mut lines, "author", &*AUTHOR_LINE)?;
-        let date = match_header_line(&mut lines, "date", &*DATE_LINE)?;
-        let subject = match_header_line(&mut lines, "subject", &*SUBJECT_LINE)?;
+        match_header_line(&mut lines, "header", &HEADER_LINE)?;
+        let author = match_header_line(&mut lines, "author", &AUTHOR_LINE)?;
+        let date = match_header_line(&mut lines, "date", &DATE_LINE)?;
+        let subject = match_header_line(&mut lines, "subject", &SUBJECT_LINE)?;
         let mut message_subject = String::from(&subject[1]);
         loop {
             let line = lines.next().ok_or(InvalidEmailMessage::UnexpectedEof {

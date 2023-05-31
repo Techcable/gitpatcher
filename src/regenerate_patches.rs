@@ -54,7 +54,7 @@ impl<'a> PatchFileSet<'a> {
     /// As long as you keep your changes saved in that repo, you'll be fine.
     pub fn stage_changes(&mut self) -> Result<(), git2::Error> {
         let mut index = self.root_repo.index()?;
-        index.add_all(&[&self.patch_dir], git2::IndexAddOption::DEFAULT, None)?;
+        index.add_all([&self.patch_dir], git2::IndexAddOption::DEFAULT, None)?;
         index.write()
     }
 }

@@ -28,7 +28,7 @@ members = ["bin"]
 
 [workspace.package]
 version = "0.1.1"
-edition = "2018"
+edition = "2021"
 authors = ["Techcable <Techcable@techcable.net>"]
 readme = "README.md"
 license = "MIT"

@@ -1,10 +1,8 @@
 use crate::format_patches::format::{CommitMessage, InvalidCommitMessage};
 use crate::utils::SimpleParser;
 use bstr::{BStr, BString, ByteSlice, ByteVec};
-use git2::{Commit, DiffOptions, EmailCreateOptions, Error, Oid, Repository};
-use slog::{info, Logger};
-use std::fmt;
-use std::fmt::{Display, Formatter};
+use git2::{Commit, DiffOptions, EmailCreateOptions, Oid, Repository};
+use slog::{error, info, Logger};
 use std::path::PathBuf;
 
 mod format;
@@ -161,63 +159,36 @@ fn cleanup_patch(s: &BStr) -> Result<BString, CleanupPatchErr> {
     }
     Ok(result)
 }
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum CleanupPatchErr {
-    UnexpectedEof {
-        expected: &'static str,
-    },
+    #[error("Unexpected EOF, expected {expected}")]
+    UnexpectedEof { expected: &'static str },
+    #[error("Invalid line @ {line_number}: {message}")]
     InvalidLine {
         line_number: usize,
-
         message: &'static str,
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum PatchFormatError {
+    #[error("Invalid commit message for {}: {}", commit_id, cause)]
     InvalidCommitMessage {
         commit_id: Oid,
+        #[source]
         cause: InvalidCommitMessage,
     },
+    #[error("Error writing to {}: {cause}", patch_file.display())]
     PatchWriteError {
         patch_file: PathBuf,
+        #[source]
         cause: std::io::Error,
     },
+    #[error("Internal error cleaning patch {}: {cause}", patch_file.display())]
     PatchCleanupError {
         patch_file: PathBuf,
         cause: CleanupPatchErr,
     },
-    InternalGit(git2::Error),
-}
-impl Display for PatchFormatError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            PatchFormatError::InvalidCommitMessage { commit_id, cause } => {
-                write!(f, "Invalid commit message for {}: {}", commit_id, cause)
-            }
-            PatchFormatError::PatchWriteError { patch_file, cause } => {
-                write!(f, "Error writing to {}: {}", patch_file.display(), cause)
-            }
-            PatchFormatError::InternalGit(cause) => Display::fmt(cause, f),
-            PatchFormatError::PatchCleanupError { patch_file, cause } => {
-                write!(f, "Internal error cleaning patch {}:", patch_file.display())?;
-                match cause {
-                    CleanupPatchErr::UnexpectedEof { expected } => {
-                        writeln!(f, "Unexpected EOF, expected {}", expected)
-                    }
-                    CleanupPatchErr::InvalidLine {
-                        line_number,
-                        message,
-                    } => {
-                        writeln!(f, "Invalid line @ {}: {}", line_number, message)
-                    }
-                }
-            }
-        }
-    }
-}
-impl From<git2::Error> for PatchFormatError {
-    fn from(cause: Error) -> Self {
-        PatchFormatError::InternalGit(cause)
-    }
+    #[error("Internal git error: {0}")]
+    InternalGit(#[from] git2::Error),
 }

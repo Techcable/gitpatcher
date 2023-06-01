@@ -1,6 +1,4 @@
 use git2::Commit;
-use std::fmt;
-use std::fmt::{Display, Formatter};
 use std::ops::Range;
 
 pub struct CommitMessage<'a> {
@@ -81,28 +79,16 @@ impl<'a> CommitMessage<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum InvalidCommitMessage {
+    #[error("Invalid UTF8 in commit message")]
     InvalidUtf8,
     /// Indicates that a message was completely empty (zero-length)
+    #[error("Empty commit message")]
     EmptyMessage,
     /// Indicates that a message only contained whitespace
+    #[error("Blank commit message (only whitespace)")]
     BlankMessage,
-}
-impl Display for InvalidCommitMessage {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match *self {
-            InvalidCommitMessage::InvalidUtf8 => {
-                write!(f, "Invalid UTF8")
-            }
-            InvalidCommitMessage::EmptyMessage => {
-                write!(f, "Empty message")
-            }
-            InvalidCommitMessage::BlankMessage => {
-                write!(f, "Blank message")
-            }
-        }
-    }
 }
 
 #[cfg(test)]

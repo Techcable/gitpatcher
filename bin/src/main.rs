@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Context};
 use clap::{Parser, Subcommand};
 use git2::build::CheckoutBuilder;
 use git2::{ObjectType, Repository, ResetType};
@@ -8,7 +9,6 @@ use std::convert::Infallible;
 use std::env;
 use std::ffi::OsStr;
 use std::path::PathBuf;
-use std::process::exit;
 
 pub struct TerminalDrain;
 impl Drain for TerminalDrain {
@@ -82,7 +82,7 @@ struct RegeneratePatchOpts {
     patch_dir: PathBuf,
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     let opt: GitPatcher = GitPatcher::parse();
     match opt.subcommand {
         PatchSubcommand::ApplyPatch(opts) => apply_patch(opts),
@@ -91,154 +91,103 @@ fn main() {
     }
 }
 
-fn apply_all_patches(opts: ApplyAllPatches) {
-    let target = Repository::open(&opts.target_repo).unwrap_or_else(|cause| {
-        eprintln!("Unable to access target repo: {}", cause);
-        exit(1);
-    });
+fn apply_all_patches(opts: ApplyAllPatches) -> anyhow::Result<()> {
+    let target = Repository::open(&opts.target_repo).with_context(|| {
+        format!(
+            "Unable to access target repo: {}",
+            opts.target_repo.display()
+        )
+    })?;
     if let Some(ref upstream) = opts.upstream {
         let obj = target
             .resolve_reference_from_short_name(upstream)
             .and_then(|reference| reference.peel(ObjectType::Any))
-            .unwrap_or_else(|cause| {
-                eprintln!("Unable to resolve {:?}: {}", upstream, cause);
-                exit(1);
-            });
+            .with_context(|| format!("Unable to resolve {upstream:?}"))?;
         let mut checkout = CheckoutBuilder::new();
         checkout.remove_untracked(true);
         target
             .reset(&obj, ResetType::Hard, Some(&mut checkout))
-            .unwrap_or_else(|cause| eprintln!("Unable to reset to {:?}: {}", upstream, cause));
+            .with_context(|| format!("Unable to reset to {upstream:?}"))?;
         println!("Reset {} to {}", opts.target_repo.display(), upstream);
     }
-    let entries = std::fs::read_dir(&opts.patch_dir).unwrap_or_else(|cause| {
-        eprintln!(
-            "Error accessing patch dir {}: {}",
-            opts.patch_dir.display(),
-            cause
-        );
-        exit(1)
-    });
+    let entries = std::fs::read_dir(&opts.patch_dir)
+        .with_context(|| format!("Error accessing patch dir {}", opts.patch_dir.display()))?;
     let mut patch_files = Vec::new();
     for entry in entries {
-        let entry = entry.unwrap_or_else(|cause| {
-            eprintln!(
-                "Error accessing patch dir {}: {}",
-                opts.patch_dir.display(),
-                cause
-            );
-            exit(1)
-        });
+        let entry = entry
+            .with_context(|| format!("Error accessing patch dir {}", opts.patch_dir.display()))?;
         // Skip all patch files that do not end with '.patch'
         let full_path = entry.path();
         if full_path.extension() != Some(OsStr::new("patch")) {
             continue;
         }
         let raw_name = entry.file_name();
-        let s = raw_name.to_str().unwrap_or_else(|| {
-            eprintln!(
+        let s = raw_name.to_str().ok_or_else(|| {
+            anyhow!(
                 "Invalid patch file name must be UTF8: {:?}",
                 entry.file_name()
-            );
-            exit(1);
-        });
+            )
+        })?;
         assert!(s.ends_with(".patch"));
         let patch_name = &s[..(s.len() - ".patch".len())];
-        let message_str = std::fs::read_to_string(&full_path).unwrap_or_else(|cause| {
-            eprintln!("Unable to read patch file {}: {}", s, cause);
-            exit(1);
-        });
-        let email = EmailMessage::parse(&message_str).unwrap_or_else(|cause| {
-            eprintln!("Invalid patch file {}: {}", s, cause);
-            exit(1);
-        });
+        let message_str = std::fs::read_to_string(&full_path)
+            .with_context(|| format!("Unable to read patch file {s}"))?;
+        let email =
+            EmailMessage::parse(&message_str).with_context(|| format!("Invalid patch file {s}"))?;
         patch_files.push((String::from(patch_name), email));
     }
     patch_files.sort_by(|(first, _), (second, _)| first.cmp(second));
     for (name, email) in &patch_files {
         println!("Applying {}.patch", name);
-        email.apply_commit(&target).unwrap_or_else(|cause| {
-            eprintln!("Failed to apply patch: {}", cause);
-            exit(1);
-        })
+        email
+            .apply_commit(&target)
+            .with_context(|| format!("Failed to apply patch: {name:?}"))?;
     }
     println!("Successfully applied {} patches!", patch_files.len());
+    Ok(())
 }
 
-fn apply_patch(opts: ApplyPatchOpts) {
+fn apply_patch(opts: ApplyPatchOpts) -> anyhow::Result<()> {
     let target_repo = match opts.target_repo {
         Some(location) => location,
-        None => env::current_dir().unwrap_or_else(|cause| {
-            eprintln!("Unable to detect current dir: {}", cause);
-            exit(1);
-        }),
+        None => env::current_dir().context("Unable to detect current dir")?,
     };
-    let target_repo = Repository::open(&target_repo).unwrap_or_else(|cause| {
-        eprintln!(
-            "Unable to access target repo {}: {}",
-            target_repo.display(),
-            cause
-        );
-        ::std::process::exit(1);
-    });
-    let message = std::fs::read_to_string(&opts.patch_file).unwrap_or_else(|cause| {
-        eprintln!("Unable to read patch: {}", cause);
-        exit(1);
-    });
-    let message = EmailMessage::parse(&message).unwrap_or_else(|cause| {
-        eprintln!("Error parsing patch: {}", cause);
-        exit(1)
-    });
-    message.apply_commit(&target_repo).unwrap_or_else(|cause| {
-        eprintln!("Unable to apply patch: {}", cause);
-        exit(1)
-    });
-    println!("Applied: {}", opts.patch_file.display())
+    let target_repo = Repository::open(&target_repo)
+        .with_context(|| format!("Unable to access target repo {}", target_repo.display(),))?;
+    let message = std::fs::read_to_string(&opts.patch_file).context("Unable to read patch")?;
+    let message = EmailMessage::parse(&message).context("Error parsing patch")?;
+    message
+        .apply_commit(&target_repo)
+        .context("Unable to apply patch")?;
+    println!("Applied: {}", opts.patch_file.display());
+    Ok(())
 }
 
-fn regenerate_patches(opts: RegeneratePatchOpts) {
-    let patched_repo = Repository::open(&opts.patched_repo).unwrap_or_else(|cause| {
-        eprintln!(
-            "Unable to access patched repo {:?}: {}",
-            opts.patched_repo, cause
-        );
-        ::std::process::exit(1);
-    });
+fn regenerate_patches(opts: RegeneratePatchOpts) -> anyhow::Result<()> {
+    let patched_repo = Repository::open(&opts.patched_repo).with_context(|| {
+        format!(
+            "Unable to access patched repo: {}",
+            opts.patched_repo.display()
+        )
+    })?;
     let upstream_obj = patched_repo
         .resolve_reference_from_short_name(&opts.upstream)
         .and_then(|reference| reference.peel(ObjectType::Any))
-        .unwrap_or_else(|cause| {
-            eprintln!(
-                "Unable to resolve upstream ref {:?}: {}",
-                opts.upstream, cause
-            );
-            ::std::process::exit(1);
-        });
-    let base_repo = Repository::discover(&opts.patch_dir).unwrap_or_else(|e| {
-        eprintln!("Unable to discover repo for patch dir: {}", e);
-        std::process::exit(1);
-    });
-    let mut patches = PatchFileSet::load(&base_repo, &opts.patch_dir).unwrap_or_else(|e| {
-        eprintln!("Unable to load patches: {}", e);
-        std::process::exit(1)
-    });
-    let upstream_commit = upstream_obj.as_commit().unwrap_or_else(|| {
-        eprintln!(
-            "Upstream ref must be either a tree or a commit: {:?}",
-            upstream_obj
-        );
-        ::std::process::exit(1);
-    });
+        .with_context(|| format!("Unable to resolve upstream ref {:?}", opts.upstream))?;
+    let base_repo =
+        Repository::discover(&opts.patch_dir).context("Unable to discover repo for patch dir")?;
+    let mut patches =
+        PatchFileSet::load(&base_repo, &opts.patch_dir).context("Unable to load patches")?;
+    let upstream_commit = upstream_obj.as_commit().with_context(|| {
+        format!("Upstream ref must be either a tree or a commit: {upstream_obj:?}")
+    })?;
     ::gitpatcher::regenerate_patches::regenerate_patches(
-        &upstream_commit,
+        upstream_commit,
         &mut patches,
         &patched_repo,
         Logger::root(TerminalDrain.ignore_res(), o!()),
         Default::default(),
-    )
-    .unwrap_or_else(|e| {
-        eprintln!("{}", e);
-        std::process::exit(1);
-    });
+    )?;
     println!("Success!");
+    Ok(())
 }

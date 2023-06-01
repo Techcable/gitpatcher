@@ -1,7 +1,6 @@
 use git2::{ApplyLocation, Diff, Repository, Signature};
 use lazy_static::lazy_static;
 use regex::{Captures, Regex};
-use std::fmt::{self, Display, Formatter};
 use time::format_description::well_known::Rfc2822;
 use time::OffsetDateTime;
 
@@ -133,42 +132,21 @@ impl EmailMessage {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum InvalidEmailMessage {
-    UnexpectedEof {
-        expected: &'static str,
-    },
+    #[error("Unexpected EOF, expected {expected}")]
+    UnexpectedEof { expected: &'static str },
+    #[error("Invalid header line, expected {expected}: {actual:?}")]
     InvalidHeader {
         expected: &'static str,
         actual: String,
     },
+    #[error("Invalid date {actual:?}: {cause}")]
     InvalidDate {
         actual: String,
+        #[source]
         cause: time::error::Parse,
     },
-    Git(git2::Error),
-}
-impl From<git2::Error> for InvalidEmailMessage {
-    fn from(cause: git2::Error) -> Self {
-        InvalidEmailMessage::Git(cause)
-    }
-}
-
-impl Display for InvalidEmailMessage {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            InvalidEmailMessage::UnexpectedEof { expected } => {
-                write!(f, "Unexpected EOF, expected {}", expected)
-            }
-            InvalidEmailMessage::InvalidHeader { expected, actual } => {
-                write!(f, "Invalid header line, expeted {}: {:?}", expected, actual)
-            }
-            InvalidEmailMessage::InvalidDate { actual, cause } => {
-                write!(f, "Invalid date {:?}: {}", actual, cause)
-            }
-            InvalidEmailMessage::Git(cause) => {
-                write!(f, "Internal git error: {}", cause)
-            }
-        }
-    }
+    #[error("Internal git error: {0}")]
+    Git(#[from] git2::Error),
 }

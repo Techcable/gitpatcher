@@ -1,9 +1,9 @@
 #!/bin/bash
-mkdir -p dist
-
-
 export XWIN_ARCH="x86,x86_64"
 targets=({x86_64,aarch64}-{unknown-linux-musl,apple-darwin} {x86_64,i686}-pc-windows-msvc)
+
+resolved_version="$(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name == "gitpatcher-bin").version')"
+echo "Compiling gitpatcher-bin: $resolved_version"
 
 function copy_and_sign() {
     local src_name="$1"
@@ -35,8 +35,10 @@ for target in "${targets[@]}"; do
  
     echo "Finished building: $target"
 
+    dist_dir="dist/gitpatcher-${resolved_version}"
+    mkdir -p $dist_dir
     for suffix in "${suffixes[@]}"; do
-        copy_and_sign "target/$target/release/gitpatcher$suffix" "dist/gitpatcher-${target}${suffix}"
+        copy_and_sign "target/$target/release/gitpatcher$suffix" "${dist_dir}/gitpatcher-${resolved_version}-${target}${suffix}"
     done
 done
 

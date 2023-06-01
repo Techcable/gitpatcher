@@ -12,8 +12,16 @@ repository.workspace = true
 name = "gitpatcher"
 path = "src/main.rs"
 
+[features]
+# Enable vendored copy of libgit2
+vendored-libgit2 = ["git2/vendored-libgit2"]
+# Use static linking for all dependencies (including libgit2)
+static = ["libz-sys/static", "vendored-libgit2"]
+
 [dependencies]
 gitpatcher = { version = "0.1.0", path = ".." }
 slog.workspace = true
 clap = { version = "4.3", default-features = false, features = ["std", "suggestions", "derive"]}
 git2.workspace = true
+# Confiured to maybe be static
+libz-sys = { version = "1" }

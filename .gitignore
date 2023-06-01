@@ -5,3 +5,6 @@ Cargo.lock
 # IntelliJ
 .idea
 *.iml
+
+# Dist script
+/dist

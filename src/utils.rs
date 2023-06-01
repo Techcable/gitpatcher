@@ -120,5 +120,6 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("Unexpected EOF")]
 pub struct UnexpectedEof;

@@ -287,60 +287,24 @@ fn is_trivial_line(line: &[u8]) -> bool {
     TRIVIAL_PATTERN.is_match(line)
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum PatchError {
     /// The patched repo was in an invalid [RepositoryState]
-    PatchedRepoInvalidState {
-        state: RepositoryState,
-    },
-    InvalidPatchName {
-        name: String,
-    },
-    PatchFormatFailed(PatchFormatError),
+    #[error("Target repo is in unexpected state: {state:?}")]
+    PatchedRepoInvalidState { state: RepositoryState },
+    #[error("Invalid name for patch: {name:?}")]
+    InvalidPatchName { name: String },
+    #[error("Failed to format patches: {0}")]
+    PatchFormatFailed(#[from] PatchFormatError),
+    #[error("Missing patch dir {}: {cause}", patch_dir.display())]
     MissingPatchDir {
         patch_dir: PathBuf,
+        #[source]
         cause: git2::Error,
     },
     /// An unexpected error occurred using git
-    Git(git2::Error),
-    Io(std::io::Error),
-}
-impl From<PatchFormatError> for PatchError {
-    fn from(cause: PatchFormatError) -> Self {
-        PatchError::PatchFormatFailed(cause)
-    }
-}
-impl From<git2::Error> for PatchError {
-    fn from(e: git2::Error) -> Self {
-        PatchError::Git(e)
-    }
-}
-impl From<std::io::Error> for PatchError {
-    fn from(e: std::io::Error) -> Self {
-        PatchError::Io(e)
-    }
-}
-impl std::fmt::Display for PatchError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PatchError::PatchedRepoInvalidState { state } => {
-                write!(f, "Target repo is in unexpected state: {:?}", state)
-            }
-            PatchError::PatchFormatFailed(cause) => {
-                write!(f, "Failed to format patches: {}", cause)
-            }
-            PatchError::InvalidPatchName { name } => {
-                write!(f, "Invalid name for patch: {:?}", name)
-            }
-            PatchError::Git(cause) => {
-                write!(f, "Unexpected git error: {}", cause)
-            }
-            PatchError::Io(cause) => {
-                write!(f, "Unexpected IO error: {}", cause)
-            }
-            PatchError::MissingPatchDir { patch_dir, cause } => {
-                write!(f, "Missing patch dir {}: {}", patch_dir.display(), cause)
-            }
-        }
-    }
+    #[error("Unexpected git error: {0}")]
+    Git(#[from] git2::Error),
+    #[error("Unexpected IO error: {0}")]
+    Io(#[from] std::io::Error),
 }

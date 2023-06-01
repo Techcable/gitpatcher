@@ -12,6 +12,7 @@ repository.workspace = true
 lazy_static = "1.4.0"
 itertools = "0.10"
 bstr = "1.5"
+thiserror = "1"
 time = { version = "0.3", features = ["macros", "parsing"] }
 slog.workspace = true
 git2.workspace = true

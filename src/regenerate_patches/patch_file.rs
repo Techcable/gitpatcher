@@ -2,14 +2,19 @@ use crate::format_patches::{FormatOptions, PatchFormatError, PatchFormatter};
 use crate::utils::RememberLast;
 use git2::build::CheckoutBuilder;
 use git2::{Commit, DiffFormat, DiffOptions, Repository, RepositoryState};
-use itertools::Itertools;
-use lazy_static::lazy_static;
 use slog::{debug, info, warn, Logger};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use bstr::ByteSlice;
+use nom::branch::alt;
+use nom::bytes::complete::{tag, take, take_until, take_while1};
+use nom::character::is_hex_digit;
+use nom::combinator::{opt, recognize};
+use nom::IResult;
+use nom::sequence::tuple;
 
 pub struct PatchFileSet<'a> {
     root_repo: &'a Repository,
@@ -144,7 +149,7 @@ pub fn regenerate_patches(
     {
         let head_tree = patch_set.root_repo.head()?.peel_to_tree()?;
         let mut filtered_tree = None;
-        let mut parents = patch_set.patch_dir.ancestors().collect_vec();
+        let mut parents = patch_set.patch_dir.ancestors().collect::<Vec<_>>();
         let len = parents.len();
         parents.truncate(len - 1); // Trim last (empty)
         for path in parents {
@@ -279,12 +284,21 @@ fn is_trivial_patch_change(diff: &str, git_ver: &str) -> bool {
     }
 }
 fn is_trivial_line(line: &[u8]) -> bool {
-    use regex::bytes::Regex;
-    lazy_static! {
-        static ref TRIVIAL_PATTERN: Regex =
-            Regex::new(r#"From [a-f0-9]+|--- a|\+\+\+ b|^.?index"#).unwrap();
+    if line.contains_str("--- a") | line.contains_str("+++ b") {
+        return true;
+    } else {
+        let res: IResult<&[u8], &[u8]> = alt((
+            recognize(tuple((
+                take_until("From "),
+                take_while1(is_hex_digit),
+            ))),
+            recognize(tuple((
+                opt(take(1usize)),
+                tag("index")
+            )))
+        ))(line);
+        res.is_ok()
     }
-    TRIVIAL_PATTERN.is_match(line)
 }
 
 #[derive(Debug, thiserror::Error)]

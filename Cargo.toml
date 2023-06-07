@@ -9,20 +9,12 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-lazy_static = "1.4.0"
-itertools = "0.10"
 bstr = "1.5"
 thiserror = "1"
+nom = "7.1.3"
 time = { version = "0.3", features = ["macros", "parsing"] }
 slog.workspace = true
 git2.workspace = true
-
-[dependencies.regex]
-version = "^1"
-# Reduce size (at the expense of performance)
-# Right now we disable 'perf' and 'unicode'
-default-features = false
-features = ["std"]
 
 [workspace]
 members = ["bin"]

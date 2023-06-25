@@ -8,3 +8,6 @@ Cargo.lock
 
 # Dist script
 /dist
+
+# The 'work' directory contains ad-hoc tests
+/work

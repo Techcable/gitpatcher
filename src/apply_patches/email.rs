@@ -6,13 +6,13 @@ use nom::{sequence::tuple, IResult};
 use time::format_description::well_known::Rfc2822;
 use time::OffsetDateTime;
 
-pub struct EmailMessage {
+pub struct EmailMessage<'a> {
     date: OffsetDateTime,
     message_summary: String,
     message_tail: String,
-    author_name: String,
-    author_email: String,
-    diff: Diff<'static>,
+    author_name: &'a str,
+    author_email: &'a str,
+    git_diff: Diff<'static>,
 }
 
 fn parse_header_line(input: &[u8]) -> IResult<&[u8], &[u8]> {
@@ -87,7 +87,7 @@ fn match_header_line<'a, T: 'a>(
                 actual: line.into(),
                 expected,
                 reason: nom::error::Error {
-                    input: String::from_utf8(err.input.to_vec())?,
+                    input: std::str::from_utf8(err.input)?.into(),
                     code: err.code,
                 },
             })
@@ -95,20 +95,22 @@ fn match_header_line<'a, T: 'a>(
         IResult::Err(nom::Err::Incomplete(_)) => unreachable!(),
     }
 }
-impl EmailMessage {
-    pub fn parse(msg: &str) -> Result<Self, InvalidEmailMessage> {
-        let diff = Diff::from_buffer(msg.as_bytes())?;
+impl<'a> EmailMessage<'a> {
+    // TODO: Accept bstr?
+    pub fn parse(msg: &'a str) -> Result<Self, InvalidEmailMessage> {
+        let git_diff = Diff::from_buffer(msg.as_bytes())?;
 
         let mut lines = msg.lines().peekable();
         match_header_line(&mut lines, "header", parse_header_line)?;
         let author = match_header_line(&mut lines, "author", parse_author_line)?
-            .try_map(|bytes| String::from_utf8(Vec::from(bytes)))?;
-        let date =
-            String::from_utf8(match_header_line(&mut lines, "date", parse_date_line)?.to_vec())?;
-        let subject = String::from_utf8(
-            match_header_line(&mut lines, "subject", parse_subject_line)?.to_vec(),
-        )?;
-        let mut message_subject = subject.clone();
+            .try_map(std::str::from_utf8)?;
+        let date = std::str::from_utf8(match_header_line(&mut lines, "date", parse_date_line)?)?;
+        let message_summary = std::str::from_utf8(match_header_line(
+            &mut lines,
+            "subject",
+            parse_subject_line,
+        )?)?;
+        let mut message_summary = String::from(message_summary);
         loop {
             let line = lines.next().ok_or(InvalidEmailMessage::UnexpectedEof {
                 expected: "diff after subject",
@@ -117,7 +119,9 @@ impl EmailMessage {
                 break;
             } else {
                 // Breaking over newlines doesn't affect final result
-                message_subject.push_str(line);
+                //
+                // TODO: Avoid copying into memory?
+                message_summary.push_str(line);
             }
         }
         /*
@@ -153,16 +157,16 @@ impl EmailMessage {
         let date = OffsetDateTime::parse(&date, &Rfc2822).map_err(|cause| {
             InvalidEmailMessage::InvalidDate {
                 cause,
-                actual: date.clone(),
+                actual: date.into(),
             }
         })?;
         Ok(EmailMessage {
-            diff,
+            git_diff,
             date,
-            message_summary: message_subject,
+            message_summary: message_summary,
             message_tail: trailing_message,
-            author_name: author_name.into(),
-            author_email: author_email.into(),
+            author_name: author_name,
+            author_email: author_email,
         })
     }
 
@@ -178,7 +182,7 @@ impl EmailMessage {
 
     /// Apply this email as a new commit against the repo
     pub fn apply_commit(&self, target: &Repository) -> Result<(), git2::Error> {
-        target.apply(&self.diff, ApplyLocation::Both, None)?;
+        target.apply(&self.git_diff, ApplyLocation::Both, None)?;
         let time = git2::Time::new(
             self.date.unix_timestamp(),
             // seconds -> minutes
@@ -214,7 +218,51 @@ pub enum InvalidEmailMessage {
         cause: time::error::Parse,
     },
     #[error("Invalid UTF8")]
-    InvalidUtf8(#[from] std::string::FromUtf8Error),
+    InvalidUtf8(#[from] std::str::Utf8Error),
     #[error("Internal git error: {0}")]
     Git(#[from] git2::Error),
+}
+
+pub use self::owned::OwnedEmailMessage;
+
+/// Helper module for using owned references to [EmailMessage] (which is otherwise borrowed).
+///
+/// Unfortunately, this involves unsafe code, which is why it is in a seperate module.
+mod owned {
+    use super::EmailMessage;
+    use stable_deref_trait::StableDeref;
+
+    /// Wrapper around a [`EmailMessage`] that owns a reference to the string.
+    ///
+    /// Needed because Rust has no self-referential structs...
+    pub struct OwnedEmailMessage<T: StableDeref<Target = str> = String> {
+        text: T,
+        msg: EmailMessage<'static>,
+    }
+    impl<T: StableDeref<Target = str>> OwnedEmailMessage<T> {
+        pub fn try_init<E>(
+            text: T,
+            func: impl for<'a> FnOnce(&'a T) -> Result<EmailMessage<'a>, E>,
+        ) -> Result<Self, E> {
+            let msg = func(&text)?;
+            // Erase lifetime
+            let msg =
+                unsafe { std::mem::transmute::<EmailMessage<'_>, EmailMessage<'static>>(msg) };
+            Ok(OwnedEmailMessage { text, msg })
+        }
+    }
+    impl<T: StableDeref<Target = str>> OwnedEmailMessage<T> {
+        #[inline]
+        pub fn text(&self) -> &str {
+            &self.text
+        }
+        #[inline]
+        pub fn email<'a>(&'a self) -> &'a EmailMessage<'a> {
+            unsafe {
+                let this: &'a OwnedEmailMessage<T> = self;
+                &*(&this.msg as &'a EmailMessage<'static> as *const EmailMessage<'static>
+                    as *const EmailMessage<'a>)
+            }
+        }
+    }
 }

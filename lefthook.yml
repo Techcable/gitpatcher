@@ -1,0 +1,9 @@
+skip_output:
+  - meta
+  - success
+  - summary
+pre-commit:
+  commands:
+    rustfmt:
+      tags: formatter
+      run: cargo fmt --check --all

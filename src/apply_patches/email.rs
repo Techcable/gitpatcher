@@ -1,10 +1,10 @@
 use git2::{ApplyLocation, Diff, Repository, Signature};
-use time::format_description::well_known::Rfc2822;
-use time::OffsetDateTime;
-use nom::{IResult, sequence::tuple};
-use nom::bytes::complete::{tag, take_while_m_n, take_until1, take_until, take_while1};
+use nom::bytes::complete::{tag, take_until, take_until1, take_while1, take_while_m_n};
 use nom::character::{is_digit, is_hex_digit};
 use nom::combinator::{all_consuming, opt, recognize, rest};
+use nom::{sequence::tuple, IResult};
+use time::format_description::well_known::Rfc2822;
+use time::OffsetDateTime;
 
 pub struct EmailMessage {
     date: OffsetDateTime,
@@ -25,14 +25,14 @@ fn parse_header_line(input: &[u8]) -> IResult<&[u8], &[u8]> {
 }
 struct AuthorInfo<T> {
     name: T,
-    email: T
+    email: T,
 }
 impl<T> AuthorInfo<T> {
     #[inline]
     fn try_map<U, E>(self, mut func: impl FnMut(T) -> Result<U, E>) -> Result<AuthorInfo<U>, E> {
         Ok(AuthorInfo {
             name: func(self.name)?,
-            email: func(self.email)?
+            email: func(self.email)?,
         })
     }
 }
@@ -52,35 +52,27 @@ fn parse_date_line(input: &[u8]) -> IResult<&[u8], &[u8]> {
         recognize(tuple((
             take_while1(|c| !matches!(c, b'+' | b'-')),
             nom::character::complete::one_of("+-"),
-            take_while1(is_digit)
-        )))
+            take_while1(is_digit),
+        ))),
     ))(input)?;
     Ok((input, date))
 }
 
 fn parse_subject_line(input: &[u8]) -> IResult<&[u8], &[u8]> {
-    let (input, (_, _, subject)) = tuple((
-        tag("Subject: "),
-        opt(tag("[PATCH] ")),
-        rest
-    ))(input)?;
+    let (input, (_, _, subject)) = tuple((tag("Subject: "), opt(tag("[PATCH] ")), rest))(input)?;
     Ok((input, subject))
 }
 
 fn parse_begin_diff_line(input: &[u8]) -> IResult<&[u8], (&[u8], &[u8])> {
-    let (input, (_, file_a, _, file_b)) = tuple((
-        tag("diff --git a/"),
-        take_until(" b/"),
-        tag(" b/"),
-        rest
-    ))(input)?;
+    let (input, (_, file_a, _, file_b)) =
+        tuple((tag("diff --git a/"), take_until(" b/"), tag(" b/"), rest))(input)?;
     Ok((input, (file_a, file_b)))
 }
 
 fn match_header_line<'a, T: 'a>(
     lines: &mut dyn Iterator<Item = &'a str>,
     expected: &'static str,
-    parse_func: fn(&'a [u8]) -> IResult<&'a [u8], T>
+    parse_func: fn(&'a [u8]) -> IResult<&'a [u8], T>,
 ) -> Result<T, InvalidEmailMessage> {
     let line = lines
         .next()
@@ -89,18 +81,18 @@ fn match_header_line<'a, T: 'a>(
         IResult::Ok((remaining, value)) => {
             assert_eq!(remaining, b"");
             Ok(value)
-        },
+        }
         IResult::Err(nom::Err::Error(err)) | IResult::Err(nom::Err::Failure(err)) => {
             Err(InvalidEmailMessage::InvalidHeader {
                 actual: line.into(),
                 expected,
                 reason: nom::error::Error {
                     input: String::from_utf8(err.input.to_vec())?,
-                    code: err.code
-                }
+                    code: err.code,
+                },
             })
-        },
-        IResult::Err(nom::Err::Incomplete(_)) => unreachable!()
+        }
+        IResult::Err(nom::Err::Incomplete(_)) => unreachable!(),
     }
 }
 impl EmailMessage {
@@ -109,18 +101,13 @@ impl EmailMessage {
 
         let mut lines = msg.lines().peekable();
         match_header_line(&mut lines, "header", parse_header_line)?;
-        let author = match_header_line(
-            &mut lines, "author",
-            parse_author_line
-        )?.try_map(|bytes| String::from_utf8(Vec::from(bytes)))?;
-        let date = String::from_utf8(match_header_line(
-            &mut lines, "date",
-            parse_date_line
-        )?.to_vec())?;
-        let subject = String::from_utf8(match_header_line(
-            &mut lines, "subject",
-            parse_subject_line
-        )?.to_vec())?;
+        let author = match_header_line(&mut lines, "author", parse_author_line)?
+            .try_map(|bytes| String::from_utf8(Vec::from(bytes)))?;
+        let date =
+            String::from_utf8(match_header_line(&mut lines, "date", parse_date_line)?.to_vec())?;
+        let subject = String::from_utf8(
+            match_header_line(&mut lines, "subject", parse_subject_line)?.to_vec(),
+        )?;
         let mut message_subject = subject.clone();
         loop {
             let line = lines.next().ok_or(InvalidEmailMessage::UnexpectedEof {
@@ -218,7 +205,7 @@ pub enum InvalidEmailMessage {
         expected: &'static str,
         actual: String,
         #[source]
-        reason: nom::error::Error<String>
+        reason: nom::error::Error<String>,
     },
     #[error("Invalid date {actual:?}: {cause}")]
     InvalidDate {

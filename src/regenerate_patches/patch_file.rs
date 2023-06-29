@@ -1,20 +1,20 @@
 use crate::format_patches::{FormatOptions, PatchFormatError, PatchFormatter};
 use crate::utils::RememberLast;
+use bstr::ByteSlice;
 use git2::build::CheckoutBuilder;
 use git2::{Commit, DiffFormat, DiffOptions, Repository, RepositoryState};
+use nom::branch::alt;
+use nom::bytes::complete::{tag, take, take_until, take_while1};
+use nom::character::is_hex_digit;
+use nom::combinator::{opt, recognize};
+use nom::sequence::tuple;
+use nom::IResult;
 use slog::{debug, info, warn, Logger};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use bstr::ByteSlice;
-use nom::branch::alt;
-use nom::bytes::complete::{tag, take, take_until, take_while1};
-use nom::character::is_hex_digit;
-use nom::combinator::{opt, recognize};
-use nom::IResult;
-use nom::sequence::tuple;
 
 pub struct PatchFileSet<'a> {
     root_repo: &'a Repository,
@@ -288,14 +288,8 @@ fn is_trivial_line(line: &[u8]) -> bool {
         return true;
     } else {
         let res: IResult<&[u8], &[u8]> = alt((
-            recognize(tuple((
-                take_until("From "),
-                take_while1(is_hex_digit),
-            ))),
-            recognize(tuple((
-                opt(take(1usize)),
-                tag("index")
-            )))
+            recognize(tuple((take_until("From "), take_while1(is_hex_digit)))),
+            recognize(tuple((opt(take(1usize)), tag("index")))),
         ))(line);
         res.is_ok()
     }

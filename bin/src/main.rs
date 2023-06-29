@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context};
 use clap::{Parser, Subcommand};
 use git2::build::CheckoutBuilder;
 use git2::{ObjectType, Repository, ResetType};
-use gitpatcher::apply_patches::EmailMessage;
+use gitpatcher::apply_patches::{email::OwnedEmailMessage, EmailMessage};
 use gitpatcher::regenerate_patches::PatchFileSet;
 use slog::{o, Drain, Level, Logger, OwnedKVList, Record};
 use std::convert::Infallible;
@@ -132,14 +132,16 @@ fn apply_all_patches(opts: ApplyAllPatches) -> anyhow::Result<()> {
         let patch_name = &s[..(s.len() - ".patch".len())];
         let message_str = std::fs::read_to_string(&full_path)
             .with_context(|| format!("Unable to read patch file {s}"))?;
-        let email =
-            EmailMessage::parse(&message_str).with_context(|| format!("Invalid patch file {s}"))?;
+        let email = OwnedEmailMessage::try_init(message_str, |message| {
+            EmailMessage::parse(message).with_context(|| format!("Invalid patch file {s}"))
+        })?;
         patch_files.push((String::from(patch_name), email));
     }
     patch_files.sort_by(|(first, _), (second, _)| first.cmp(second));
     for (name, email) in &patch_files {
         println!("Applying {}.patch", name);
         email
+            .email()
             .apply_commit(&target)
             .with_context(|| format!("Failed to apply patch: {name:?}"))?;
     }

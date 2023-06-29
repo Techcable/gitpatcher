@@ -1,5 +1,3 @@
-use std::mem::ManuallyDrop;
-
 use git2::{ApplyLocation, Diff, Repository, Signature};
 use time::format_description::well_known::Rfc2822;
 use time::OffsetDateTime;
@@ -232,34 +230,4 @@ pub enum InvalidEmailMessage {
     InvalidUtf8(#[from] std::string::FromUtf8Error),
     #[error("Internal git error: {0}")]
     Git(#[from] git2::Error),
-}
-
-struct DiffyPatch {
-    patch_text: ManuallyDrop<String>,
-    // HACK: Actually borrows from &'patch_text
-    patch: ManuallyDrop<diffy::Patch<'static, str>>,
-}
-impl DiffyPatch {
-    pub fn parse_text(text: String) -> Result<Self, diffy::ParsePatchError> {
-        unsafe {
-            let patch = diffy::Patch::from_str(&*(text.as_str() as *const str))?;
-            Ok(DiffyPatch {
-                patch_text: ManuallyDrop::new(text),
-                patch: ManuallyDrop::new(patch)
-            })
-        }
-    }
-    #[inline]
-    pub fn patch(&self) -> &diffy::Patch<'_, str> {
-        &*self.patch
-    }
-}
-impl Drop for DiffyPatch {
-    fn drop(&mut self) {
-        unsafe {
-            // Drop patch before patch_text
-            ManuallyDrop::drop(&mut self.patch);
-            ManuallyDrop::drop(&mut self.patch_text);
-        }
-    }
 }

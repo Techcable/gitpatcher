@@ -1,9 +1,8 @@
-use git2::{ApplyLocation, Diff, Repository, Signature};
+use git2::{ApplyLocation, Repository, Signature};
 use nom::bytes::complete::{tag, take_until, take_until1, take_while1, take_while_m_n};
 use nom::character::{is_digit, is_hex_digit};
 use nom::combinator::{all_consuming, opt, recognize, rest};
 use nom::{sequence::tuple, IResult};
-use time::format_description::well_known::Rfc2822;
 use time::OffsetDateTime;
 
 pub struct EmailMessage {
@@ -12,7 +11,7 @@ pub struct EmailMessage {
     message_tail: String,
     author_name: String,
     author_email: String,
-    git_diff: Diff<'static>,
+    git_diff: git2::Diff<'static>,
 }
 
 fn parse_header_line(input: &[u8]) -> IResult<&[u8], &[u8]> {
@@ -85,11 +84,11 @@ fn match_header_line<'a, T: 'a>(
         .next()
         .ok_or(InvalidEmailMessage::UnexpectedEof { expected })?;
     match all_consuming(parse_func)(line.as_bytes()) {
-        IResult::Ok((remaining, value)) => {
+        Ok((remaining, value)) => {
             assert_eq!(remaining, b"");
             Ok(value)
         }
-        IResult::Err(nom::Err::Error(err)) | IResult::Err(nom::Err::Failure(err)) => {
+        Err(nom::Err::Error(err)) | Err(nom::Err::Failure(err)) => {
             Err(InvalidEmailMessage::InvalidHeader {
                 actual: line.into(),
                 expected,
@@ -99,7 +98,7 @@ fn match_header_line<'a, T: 'a>(
                 },
             })
         }
-        IResult::Err(nom::Err::Incomplete(_)) => unreachable!(),
+        Err(nom::Err::Incomplete(_)) => unreachable!(),
     }
 }
 impl EmailMessage {
@@ -127,8 +126,6 @@ impl EmailMessage {
                 break;
             } else {
                 // Breaking over newlines doesn't affect final result
-                //
-                // TODO: Avoid copying into memory?
                 message_summary.push_str(line);
             }
         }
@@ -160,12 +157,11 @@ impl EmailMessage {
         if trailing_message.ends_with('\n') {
             assert_eq!(trailing_message.pop(), Some('\n'));
         }
-        let date = OffsetDateTime::parse(&date, &Rfc2822).map_err(|cause| {
-            InvalidEmailMessage::InvalidDate {
+        let date = OffsetDateTime::parse(date, &time::format_description::well_known::Rfc2822)
+            .map_err(|cause| InvalidEmailMessage::InvalidDate {
                 cause,
                 actual: date.into(),
-            }
-        })?;
+            })?;
         Ok(EmailMessage {
             git_diff,
             date,

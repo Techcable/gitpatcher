@@ -1,3 +1,4 @@
+use arrayvec::ArrayVec;
 use bstr::{BStr, ByteSlice};
 use std::iter::Peekable;
 
@@ -59,21 +60,19 @@ impl<'a> SimpleParser<'a> {
         }
     }
 }
-pub struct RememberLast<T: Clone> {
-    limit: usize,
+pub struct RememberLast<T: Clone, const LIMIT: usize> {
     // Items we remember from oldest to newest
-    last: Vec<T>,
+    last: ArrayVec<T, LIMIT>,
 }
-impl<T: Clone> RememberLast<T> {
-    pub fn new(limit: usize) -> Self {
-        assert!(limit > 0);
+impl<T: Clone, const LIMIT: usize> RememberLast<T, LIMIT> {
+    pub fn new() -> Self {
+        assert!(LIMIT > 0);
         RememberLast {
-            limit,
-            last: Vec::with_capacity(limit),
+            last: ArrayVec::new(),
         }
     }
     pub fn remember(&mut self, element: &T) {
-        if self.last.len() < self.limit {
+        if self.last.len() < LIMIT {
             self.last.push(element.clone());
         } else {
             self.last.rotate_left(1);
@@ -85,7 +84,7 @@ impl<T: Clone> RememberLast<T> {
         &self.last[self.last.len() - offset - 1]
     }
     /// The last elements we remember,
-    /// from oldest to newes
+    /// from oldest to newest
     #[inline]
     pub fn as_slice(&self) -> &[T] {
         &self.last
@@ -95,15 +94,15 @@ impl<T: Clone> RememberLast<T> {
         self.last.len()
     }
 }
-pub struct IterRememberLast<I: Iterator>
+pub struct IterRememberLast<I: Iterator, const LIMIT: usize>
 where
     I::Item: Clone,
 {
-    remember: RememberLast<I::Item>,
+    remember: RememberLast<I::Item, LIMIT>,
     iter: I,
 }
-impl<I: Iterator> IterRememberLast<I> where I::Item: Clone {}
-impl<I: Iterator> Iterator for IterRememberLast<I>
+impl<I: Iterator, const LIMIT: usize> IterRememberLast<I, LIMIT> where I::Item: Clone {}
+impl<I: Iterator, const LIMIT: usize> Iterator for IterRememberLast<I, LIMIT>
 where
     I::Item: Clone,
 {

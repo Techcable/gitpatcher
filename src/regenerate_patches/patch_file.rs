@@ -200,7 +200,7 @@ pub fn regenerate_patches(
         for patch in &patch_set.patches {
             let git_version = {
                 let mut reader = BufReader::new(File::open(&patch.path)?);
-                let mut remember = RememberLast::new(2);
+                let mut remember = RememberLast::<_, 2>::new();
                 let mut buffer = String::new();
                 while reader.read_line(&mut buffer)? != 0 {
                     remember.remember(&buffer);
@@ -240,7 +240,7 @@ fn is_trivial_patch_change(diff: &str, git_ver: &str) -> bool {
     const CHANGE_MARKERS: &[char] = &['+', '-'];
     let lines = diff.lines();
     // NOTE: Remember one more than we strictly need
-    let mut remember = RememberLast::new(5);
+    let mut remember = RememberLast::<_, 5>::new();
     for line in lines {
         // We only care about lines that are (+|-)
         if !line.starts_with(CHANGE_MARKERS) {

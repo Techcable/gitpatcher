@@ -1,5 +1,3 @@
-use crate::format_patches::{FormatOptions, PatchFormatError, PatchFormatter};
-use crate::utils::RememberLast;
 use bstr::ByteSlice;
 use git2::build::CheckoutBuilder;
 use git2::{Commit, DiffFormat, DiffOptions, Repository, RepositoryState};
@@ -15,6 +13,9 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+
+use crate::format_patches::{FormatOptions, PatchFormatError, PatchFormatter};
+use crate::utils::RememberLast;
 
 pub struct PatchFileSet<'a> {
     root_repo: &'a Repository,
@@ -285,7 +286,7 @@ fn is_trivial_patch_change(diff: &str, git_ver: &str) -> bool {
 }
 fn is_trivial_line(line: &[u8]) -> bool {
     if line.contains_str("--- a") | line.contains_str("+++ b") {
-        return true;
+        true
     } else {
         let res: IResult<&[u8], &[u8]> = alt((
             recognize(tuple((take_until("From "), take_while1(is_hex_digit)))),

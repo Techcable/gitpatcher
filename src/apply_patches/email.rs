@@ -6,12 +6,12 @@ use nom::{sequence::tuple, IResult};
 use time::format_description::well_known::Rfc2822;
 use time::OffsetDateTime;
 
-pub struct EmailMessage<'a> {
+pub struct EmailMessage {
     date: OffsetDateTime,
     message_summary: String,
     message_tail: String,
-    author_name: &'a str,
-    author_email: &'a str,
+    author_name: String,
+    author_email: String,
     git_diff: Diff<'static>,
 }
 
@@ -34,6 +34,13 @@ impl<T> AuthorInfo<T> {
             name: func(self.name)?,
             email: func(self.email)?,
         })
+    }
+    #[inline]
+    fn map<U>(self, mut func: impl FnMut(T) -> U) -> AuthorInfo<U> {
+        AuthorInfo {
+            name: func(self.name),
+            email: func(self.email),
+        }
     }
 }
 fn parse_author_line(input: &[u8]) -> IResult<&[u8], AuthorInfo<&[u8]>> {
@@ -95,15 +102,16 @@ fn match_header_line<'a, T: 'a>(
         IResult::Err(nom::Err::Incomplete(_)) => unreachable!(),
     }
 }
-impl<'a> EmailMessage<'a> {
+impl EmailMessage {
     // TODO: Accept bstr?
-    pub fn parse(msg: &'a str) -> Result<Self, InvalidEmailMessage> {
-        let git_diff = Diff::from_buffer(msg.as_bytes())?;
+    pub fn parse(msg: &str) -> Result<Self, InvalidEmailMessage> {
+        let git_diff = git2::Diff::from_buffer(msg.as_bytes())?;
 
         let mut lines = msg.lines().peekable();
         match_header_line(&mut lines, "header", parse_header_line)?;
         let author = match_header_line(&mut lines, "author", parse_author_line)?
-            .try_map(std::str::from_utf8)?;
+            .try_map(std::str::from_utf8)?
+            .map(String::from);
         let date = std::str::from_utf8(match_header_line(&mut lines, "date", parse_date_line)?)?;
         let message_summary = std::str::from_utf8(match_header_line(
             &mut lines,
@@ -152,8 +160,6 @@ impl<'a> EmailMessage<'a> {
         if trailing_message.ends_with('\n') {
             assert_eq!(trailing_message.pop(), Some('\n'));
         }
-        let author_name = &author.name;
-        let author_email = &author.email;
         let date = OffsetDateTime::parse(&date, &Rfc2822).map_err(|cause| {
             InvalidEmailMessage::InvalidDate {
                 cause,
@@ -163,10 +169,10 @@ impl<'a> EmailMessage<'a> {
         Ok(EmailMessage {
             git_diff,
             date,
-            message_summary: message_summary,
+            message_summary,
             message_tail: trailing_message,
-            author_name: author_name,
-            author_email: author_email,
+            author_name: author.name,
+            author_email: author.email,
         })
     }
 
@@ -221,48 +227,4 @@ pub enum InvalidEmailMessage {
     InvalidUtf8(#[from] std::str::Utf8Error),
     #[error("Internal git error: {0}")]
     Git(#[from] git2::Error),
-}
-
-pub use self::owned::OwnedEmailMessage;
-
-/// Helper module for using owned references to [EmailMessage] (which is otherwise borrowed).
-///
-/// Unfortunately, this involves unsafe code, which is why it is in a seperate module.
-mod owned {
-    use super::EmailMessage;
-    use stable_deref_trait::StableDeref;
-
-    /// Wrapper around a [`EmailMessage`] that owns a reference to the string.
-    ///
-    /// Needed because Rust has no self-referential structs...
-    pub struct OwnedEmailMessage<T: StableDeref<Target = str> = String> {
-        text: T,
-        msg: EmailMessage<'static>,
-    }
-    impl<T: StableDeref<Target = str>> OwnedEmailMessage<T> {
-        pub fn try_init<E>(
-            text: T,
-            func: impl for<'a> FnOnce(&'a T) -> Result<EmailMessage<'a>, E>,
-        ) -> Result<Self, E> {
-            let msg = func(&text)?;
-            // Erase lifetime
-            let msg =
-                unsafe { std::mem::transmute::<EmailMessage<'_>, EmailMessage<'static>>(msg) };
-            Ok(OwnedEmailMessage { text, msg })
-        }
-    }
-    impl<T: StableDeref<Target = str>> OwnedEmailMessage<T> {
-        #[inline]
-        pub fn text(&self) -> &str {
-            &self.text
-        }
-        #[inline]
-        pub fn email<'a>(&'a self) -> &'a EmailMessage<'a> {
-            unsafe {
-                let this: &'a OwnedEmailMessage<T> = self;
-                &*(&this.msg as &'a EmailMessage<'static> as *const EmailMessage<'static>
-                    as *const EmailMessage<'a>)
-            }
-        }
-    }
 }

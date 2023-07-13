@@ -1,4 +1,8 @@
-use git2::{ApplyLocation, Repository, Signature};
+use bstr::ByteSlice;
+use std::fmt::{self, Display};
+use std::path::{Path, PathBuf};
+
+use git2::{ApplyLocation, Delta as DeltaStatus, Repository, Signature};
 use nom::bytes::complete::{tag, take_until, take_until1, take_while1, take_while_m_n};
 use nom::character::{is_digit, is_hex_digit};
 use nom::combinator::{all_consuming, opt, recognize, rest};
@@ -183,7 +187,103 @@ impl EmailMessage {
     }
 
     /// Apply this email as a new commit against the repo
-    pub fn apply_commit(&self, target: &Repository) -> Result<(), git2::Error> {
+    pub fn apply_commit(&self, target: &Repository) -> Result<(), PatchApplyError> {
+        let working_directory = target.workdir().expect("Missing working directory!");
+        let mut index = target.index()?;
+        const INDEX_STAGE: i32 = 0; // not sure what this does
+
+        'deltaLoop: for (delta_idx, git_delta) in self.git_diff.deltas().enumerate() {
+            let create_desc = || DeltaDesc::from_git(Some(delta_idx), git_delta);
+            let check_relative = |pth: &'a Path| {
+                if pth.is_relative() {
+                    Ok(pth)
+                } else {
+                    Err(PatchApplyError::ForbiddenAbsolutePath {
+                        path: pth.into(),
+                        delta: create_desc(),
+                    })
+                }
+            };
+            match git_delta.status() {
+                DeltaStatus::Deleted => {
+                    assert!(git_delta.old_file().exists(), "Old file should exist");
+                    assert!(!git_delta.new_file().exists(), "New file should not exist");
+                    let path = check_relative(
+                        git_delta
+                            .old_file()
+                            .path()
+                            .expect("Old file should have path"),
+                    )?;
+                    index
+                        .remove_path(path)
+                        .map_err(|cause| PatchApplyError::DeleteFileFailed {
+                            cause,
+                            delta: create_desc(),
+                        })?;
+                    continue 'deltaLoop;
+                }
+                DeltaStatus::Added
+                | DeltaStatus::Modified
+                | DeltaStatus::Renamed
+                | DeltaStatus::Copied => {
+                    // fallthrough to generic handler
+                }
+                // unexpected status
+                DeltaStatus::Unmodified
+                | DeltaStatus::Ignored
+                | DeltaStatus::Untracked
+                | DeltaStatus::Typechange
+                | DeltaStatus::Unreadable
+                | DeltaStatus::Conflicted => {
+                    return Err(PatchApplyError::UnexpectedDeltaStatus {
+                        delta: create_desc(),
+                    })
+                }
+            }
+            let mut patch =
+                git2::Patch::from_diff(&self.git_diff, delta_idx)?.ok_or_else(|| {
+                    assert!(
+                        git_delta.old_file().is_binary() || git_delta.new_file().is_binary(),
+                        "Binary diff should be only reason for `None` ({git_delta:#?})",
+                    );
+                    PatchApplyError::BinaryDelta {
+                        delta: create_desc(),
+                    }
+                })?;
+            let patch_buf = patch.to_buf()?;
+
+            let diffy_patch = diffy::Patch::from_bytes(patch_buf.as_bytes()).map_err(|cause| {
+                PatchApplyError::FailParseGitDelta {
+                    delta: create_desc(),
+                    cause,
+                }
+            })?;
+            let existing: Option<(git2::IndexEntry, git2::Blob)> = match git_delta.old_file().path()
+            {
+                None => None,
+                Some(old_path) => {
+                    check_relative(old_path)?;
+                    // Read bytes from the index
+                    let entry = index.get_path(old_path, INDEX_STAGE).ok_or_else(|| {
+                        PatchApplyError::MissingOriginalFile {
+                            path: old_path.into(),
+                            delta: create_desc(),
+                        }
+                    })?;
+                    let blob = target.find_blob(entry.id)?;
+                    assert_eq!(blob.id(), entry.id);
+                    Some((entry, blob))
+                }
+            };
+            let existing_bytes: &[u8] = existing.as_ref().map_or(b"", |(_, blob)| blob.content());
+            let patched_bytes =
+                diffy::apply_bytes(existing_bytes, &diffy_patch).map_err(|cause| {
+                    PatchApplyError::FailApplyDelta {
+                        delta: create_desc(),
+                        cause,
+                    }
+                })?;
+        }
         target.apply(&self.git_diff, ApplyLocation::Both, None)?;
         let time = git2::Time::new(
             self.date.unix_timestamp(),
@@ -223,4 +323,152 @@ pub enum InvalidEmailMessage {
     InvalidUtf8(#[from] std::str::Utf8Error),
     #[error("Internal git error: {0}")]
     Git(#[from] git2::Error),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum PatchApplyError {
+    #[error("Deleting file failed for delta `{delta}`, {cause}")]
+    DeleteFileFailed {
+        delta: DeltaDesc,
+        #[source]
+        cause: git2::Error,
+    },
+    #[error("Missing original file for {delta}")]
+    MissingOriginalFile { delta: DeltaDesc, path: PathBuf },
+    #[error("Absolute paths are forbidden: `{path}` (in delta {delta})", path = path.display())]
+    ForbiddenAbsolutePath { delta: DeltaDesc, path: PathBuf },
+    #[error("Unexpected status for delta: {delta}")]
+    UnexpectedDeltaStatus { delta: DeltaDesc },
+    #[error("Unexpected binary delta {delta}")]
+    BinaryDelta { delta: DeltaDesc },
+    #[error("Diffy failed to parse git delta {delta}, {cause}")]
+    FailParseGitDelta {
+        delta: DeltaDesc,
+        #[source]
+        cause: diffy::ParsePatchError,
+    },
+    #[error("Failed to apply delta {delta}, {cause}")]
+    FailApplyDelta {
+        delta: DeltaDesc,
+        #[source]
+        cause: diffy::ApplyError,
+    },
+    #[error("Internal git error: {cause}")]
+    Git {
+        #[from]
+        cause: git2::Error,
+        #[cfg(backtrace)]
+        #[backtrace]
+        backtrace: std::backtrace::Backtrace,
+    },
+}
+
+fn delta_status_name(status: DeltaStatus) -> &'static str {
+    match status {
+        DeltaStatus::Unmodified => "unmodified",
+        DeltaStatus::Added => "added",
+        DeltaStatus::Deleted => "deleted",
+        DeltaStatus::Modified => "modified",
+        DeltaStatus::Renamed => "renamed",
+        DeltaStatus::Copied => "copied",
+        DeltaStatus::Ignored => "ignored",
+        DeltaStatus::Untracked => "untracked",
+        DeltaStatus::Typechange => "type changed",
+        DeltaStatus::Unreadable => "unreadable",
+        DeltaStatus::Conflicted => "conflicted",
+    }
+}
+
+#[derive(Debug)]
+pub struct DeltaDesc {
+    delta_index: Option<usize>,
+    old_file: DeltaFileDesc,
+    new_file: DeltaFileDesc,
+    delta_status: git2::Delta,
+}
+
+impl DeltaDesc {
+    fn from_git(index: Option<usize>, git_delta: git2::DiffDelta) -> Self {
+        let old_file = DeltaFileDesc::from(git_delta.old_file());
+        let new_file = DeltaFileDesc::from(git_delta.new_file());
+        match git_delta.status() {
+            DeltaStatus::Added => {
+                assert_eq!(old_file.path, None);
+                assert_ne!(new_file.path, None);
+            }
+            DeltaStatus::Deleted => {
+                assert_ne!(old_file.path, None);
+                assert_eq!(new_file.path, None);
+            }
+            _ => {}
+        }
+        DeltaDesc {
+            old_file,
+            new_file,
+            delta_status: git_delta.status(),
+            delta_index: index,
+        }
+    }
+}
+impl Display for DeltaDesc {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.delta_status {
+            DeltaStatus::Added => write!(f, "added {new_file}", new_file = self.new_file)?,
+            DeltaStatus::Deleted => write!(f, "removed {old_file}", old_file = self.old_file)?,
+            _ => {
+                write!(
+                    f,
+                    "{status_name} {old_file}",
+                    status_name = delta_status_name(self.delta_status),
+                    old_file = self.old_file
+                )?;
+                if self.old_file.path != self.new_file.path {
+                    write!(f, " -> {new_file}", new_file = self.new_file)?;
+                }
+            }
+        }
+        if let Some(index) = self.delta_index {
+            write!(f, " (#{})", index + 1)?;
+        }
+        Ok(())
+    }
+}
+#[derive(Debug)]
+pub struct DeltaFileDesc {
+    path: Option<PathBuf>,
+    oid: git2::Oid,
+    binary: bool,
+}
+impl Display for DeltaFileDesc {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.path {
+            Some(ref path) => {
+                if self.binary {
+                    f.write_str("binary ")?;
+                }
+                Display::fmt(&path.display(), f)
+            }
+            None => f.write_str("/dev/null"),
+        }
+    }
+}
+
+impl<'a> From<git2::DiffFile<'a>> for DeltaFileDesc {
+    fn from(git_file: git2::DiffFile<'a>) -> Self {
+        DeltaFileDesc {
+            path: if git_file.exists() {
+                Some(
+                    git_file
+                        .path()
+                        .expect("diff file exists, but path is None")
+                        .into(),
+                )
+            } else {
+                assert_eq!(git_file.path(), None, "null path for non-existent file");
+                None
+            },
+            binary: git_file.is_binary(),
+            oid: git_file.id(),
+        }
+    }
 }

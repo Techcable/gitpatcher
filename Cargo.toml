@@ -16,6 +16,11 @@ arrayvec = "0.7.2"
 time = { version = "0.3", features = ["macros", "parsing"] }
 slog.workspace = true
 git2.workspace = true
+# Used to apply patches
+diffy = "0.3"
+
+[build-dependencies]
+rustversion = "1"
 
 [workspace]
 members = ["bin"]

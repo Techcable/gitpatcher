@@ -21,7 +21,7 @@ vendored-libgit2 = ["git2/vendored-libgit2"]
 static = ["libz-sys/static", "vendored-libgit2"]
 
 [dependencies]
-gitpatcher = { version = "0.1.0", path = ".." }
+gitpatcher = { version = "0.2.0", path = ".." }
 anyhow = "1"
 slog.workspace = true
 clap = { version = "4.3", features = ["derive"] }

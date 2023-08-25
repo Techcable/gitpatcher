@@ -3,7 +3,7 @@ use std::fmt::{self, Display};
 use std::path::{Path, PathBuf};
 
 use git2::build::TreeUpdateBuilder;
-use git2::{ApplyLocation, Delta as DeltaStatus, FileMode, Repository, Signature};
+use git2::{Delta as DeltaStatus, FileMode, Repository, ResetType, Signature};
 use nom::bytes::complete::{tag, take_until, take_until1, take_while1, take_while_m_n};
 use nom::character::{is_digit, is_hex_digit};
 use nom::combinator::{all_consuming, opt, recognize, rest};
@@ -241,7 +241,16 @@ impl EmailMessage {
 
         let diffy_patch = diffy::Patch::from_bytes(patch_buf.as_bytes())
             .map_err(|cause| DeltaApplyError::FailParseGitDelta { cause })?;
-        let existing: Option<(git2::TreeEntry, git2::Blob)> = match ctx.git_delta.old_file().path()
+        let existing: Option<(git2::TreeEntry, git2::Blob)> = match ctx
+            .git_delta
+            .old_file()
+            .path()
+            /*
+             * NOTE: Sometimes DeltaStatus::Added has an old_file (instead of None).
+             * We need to explicitly ignore that case,
+             * because otherwise the file will be missing.
+             */
+            .filter(|_| !matches!(ctx.git_delta.status(), DeltaStatus::Added))
         {
             None => None,
             Some(old_path) => {
@@ -285,6 +294,10 @@ impl EmailMessage {
                 delta: desc.clone(),
             })?
         }
+        let updated_tree_oid = new_tree
+            .create_updated(target, &tree)
+            .map_err(|cause| PatchApplyError::FailBuildTree { cause })?;
+        let updated_tree = target.find_tree(updated_tree_oid).unexpected()?;
         // target.apply(&self.git_diff, ApplyLocation::Both, None)?;
         let time = git2::Time::new(
             self.date.unix_timestamp(),
@@ -296,7 +309,18 @@ impl EmailMessage {
         let head_commit = target.head()?.peel_to_commit()?;
         let parents = vec![&head_commit];
         let message = self.full_message();
-        target.commit(Some("HEAD"), &author, &author, &message, &tree, &parents)?;
+        let commit_id = target.commit(
+            Some("HEAD"),
+            &author,
+            &author,
+            &message,
+            &updated_tree,
+            &parents,
+        )?;
+        let commit = target.find_commit(commit_id).unexpected()?;
+        target
+            .reset(commit.as_object(), ResetType::Hard, None)
+            .unexpected()?;
         Ok(())
     }
 }
@@ -331,6 +355,11 @@ pub enum PatchApplyError {
         delta: DeltaDesc,
         #[source]
         cause: DeltaApplyError,
+    },
+    #[error("Failed to construct updated tree")]
+    FailBuildTree {
+        #[source]
+        cause: git2::Error,
     },
     #[error(transparent)]
     ForbiddenAbsolutePath(#[from] AbsolutePathError),
@@ -376,27 +405,51 @@ pub enum DeltaApplyError {
         backtrace: std::backtrace::Backtrace,
     },
 }
-trait IntoUnexpected<R> {
-    fn unexpected(self) -> R;
+struct UnexpectedGitError {
+    cause: git2::Error,
+    backtrace: std::backtrace::Backtrace,
 }
-impl IntoUnexpected<DeltaApplyError> for git2::Error {
+impl From<UnexpectedGitError> for DeltaApplyError {
+    #[inline]
+    fn from(value: UnexpectedGitError) -> Self {
+        DeltaApplyError::UnexpectedGit {
+            cause: value.cause,
+            backtrace: value.backtrace,
+        }
+    }
+}
+impl From<UnexpectedGitError> for PatchApplyError {
+    #[inline]
+    fn from(value: UnexpectedGitError) -> Self {
+        PatchApplyError::UnexpectedGit {
+            cause: value.cause,
+            backtrace: value.backtrace,
+        }
+    }
+}
+trait IntoUnexpected {
+    type Res: Sized;
+    fn unexpected(self) -> Self::Res;
+}
+impl IntoUnexpected for git2::Error {
+    type Res = UnexpectedGitError;
     #[cold]
     #[inline(always)] // don't want this in backtraces
-    fn unexpected(self) -> DeltaApplyError {
-        DeltaApplyError::UnexpectedGit {
+    fn unexpected(self) -> UnexpectedGitError {
+        UnexpectedGitError {
             cause: self,
             backtrace: std::backtrace::Backtrace::capture(),
         }
     }
 }
-impl<T, E, ER> IntoUnexpected<Result<T, ER>> for Result<T, E>
+impl<T, E> IntoUnexpected for Result<T, E>
 where
-    ER: std::error::Error,
-    E: IntoUnexpected<ER> + std::error::Error,
+    E: IntoUnexpected,
 {
+    type Res = Result<T, E::Res>;
     #[cold]
     #[inline(always)] // don't want this in backtraces
-    fn unexpected(self) -> Result<T, ER> {
+    fn unexpected(self) -> Result<T, E::Res> {
         match self {
             Ok(value) => Ok(value),
             Err(err) => Err(err.unexpected()),
@@ -457,17 +510,6 @@ impl DeltaDesc {
             err.role = Some("new_file");
             err
         })?;
-        match git_delta.status() {
-            DeltaStatus::Added => {
-                assert_eq!(old_file.path, None);
-                assert_ne!(new_file.path, None);
-            }
-            DeltaStatus::Deleted => {
-                assert_ne!(old_file.path, None);
-                assert_eq!(new_file.path, None);
-            }
-            _ => {}
-        }
         Ok(DeltaDesc {
             old_file,
             new_file,

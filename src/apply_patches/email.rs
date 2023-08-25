@@ -407,6 +407,7 @@ pub enum DeltaApplyError {
 }
 struct UnexpectedGitError {
     cause: git2::Error,
+    #[cfg(backtrace)]
     backtrace: std::backtrace::Backtrace,
 }
 impl From<UnexpectedGitError> for DeltaApplyError {
@@ -414,15 +415,16 @@ impl From<UnexpectedGitError> for DeltaApplyError {
     fn from(value: UnexpectedGitError) -> Self {
         DeltaApplyError::UnexpectedGit {
             cause: value.cause,
+            #[cfg(backtrace)]
             backtrace: value.backtrace,
         }
     }
 }
 impl From<UnexpectedGitError> for PatchApplyError {
-    #[inline]
     fn from(value: UnexpectedGitError) -> Self {
         PatchApplyError::UnexpectedGit {
             cause: value.cause,
+            #[cfg(backtrace)]
             backtrace: value.backtrace,
         }
     }
@@ -438,6 +440,7 @@ impl IntoUnexpected for git2::Error {
     fn unexpected(self) -> UnexpectedGitError {
         UnexpectedGitError {
             cause: self,
+            #[cfg(backtrace)]
             backtrace: std::backtrace::Backtrace::capture(),
         }
     }

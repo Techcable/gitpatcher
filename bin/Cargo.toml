@@ -7,6 +7,8 @@ authors.workspace = true
 readme.workspace = true
 license.workspace = true
 repository.workspace = true
+# Used to compute build version
+build = "build.rs"
 
 [[bin]]
 name = "gitpatcher"
@@ -26,3 +28,7 @@ clap = { version = "4.3", features = ["derive"] }
 git2.workspace = true
 # Confiured to maybe be static
 libz-sys = { version = "1" }
+
+[build-dependencies]
+# Already using libgit2 for engine, might as well use for versions
+vergen = { version = "8.2", features = ["git", "git2"] }

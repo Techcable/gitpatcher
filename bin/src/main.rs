@@ -35,7 +35,7 @@ impl Drain for TerminalDrain {
 }
 
 #[derive(Parser, Debug)]
-#[clap(about = "A patching system based on git")]
+#[clap(name = "gitpatcher", about = "A patching system based on git", version = env!("VERGEN_GIT_DESCRIBE"))]
 struct GitPatcher {
     #[clap(subcommand)]
     subcommand: PatchSubcommand,

@@ -26,7 +26,10 @@ for target in "${targets[@]}"; do
     echo "=== Building target: $target ==="
     suffixes=("")
     compflags=(--release --features static)
-    if echo $target | grep -Eq '^\w+-pc-windows'; then
+    if echo $target | grep -Eq "${TARGET_SKIP_PATTERN:-.*}"; then
+        echo "WARNING: Skipping $target (in accordinace with \$TARGET_SKIP_PATTERN)" >&2;
+        continue;
+    elif echo $target | grep -Eq '^\w+-pc-windows'; then
         cargo +stable xwin build --target $target "${compflags[@]}" || exit 1
         suffixes=(".exe" ".pdb")
     else

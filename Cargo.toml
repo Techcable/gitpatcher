@@ -27,8 +27,11 @@ diffy = "0.4"
 backtrace = []
 
 [dev-dependencies]
-anyhow = "1"
-testdir = "0.9"
+anyhow = { version = "1", features = ["backtrace"] }
+once_cell = "1.18"
+# Used for tests
+testdir = "0.8"
+scratch = "1"
 
 [workspace]
 members = ["bin"]

@@ -1,0 +1,24 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Techcable <git@techcable.net>
+Date: Thu, 24 Aug 2023 23:11:32 -0700
+Subject: [PATCH] Increase iterations of approx_pi
+
+Blegh
+---
+<stats>
+
+diff --git a/approx_pi.rs b/approx_pi_mod.rs
+index ab48e1c..0460f76 100644
+--- a/approx_pi.rs
++++ b/approx_pi_mod.rs
+@@ -2,7 +4,7 @@ fn polygon_apothem_area(apothem: f64, sides: u16) -> f64 {
+ }
+ 
+ fn main() {
+-    for sides in 0..16 {
++    for sides in 0..21 {
+         println!("{} sides: {}", sides, polygon_apothem_area(1.0, sides));
+     }
+ }
+--
+fake

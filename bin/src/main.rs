@@ -4,35 +4,10 @@ use git2::build::CheckoutBuilder;
 use git2::{ObjectType, Repository, ResetType};
 use gitpatcher::apply_patches::EmailMessage;
 use gitpatcher::regenerate_patches::PatchFileSet;
-use slog::{o, Drain, Level, Logger, OwnedKVList, Record};
-use std::convert::Infallible;
+use slog::{o, Drain, Logger};
 use std::env;
 use std::ffi::OsStr;
 use std::path::PathBuf;
-
-pub struct TerminalDrain;
-impl Drain for TerminalDrain {
-    type Ok = ();
-    type Err = Infallible;
-
-    fn log(&self, record: &Record, _values: &OwnedKVList) -> Result<Self::Ok, Self::Err> {
-        match record.level() {
-            Level::Critical | Level::Error | Level::Warning => {
-                eprintln!("{}", record.msg());
-            }
-            Level::Info => {
-                println!("{}", record.msg());
-            }
-            Level::Debug => {
-                if std::env::var_os("GITPATCHER_DEBUG").map_or(false, |s| s == "1") {
-                    println!("DEBUG: {}", record.msg());
-                }
-            }
-            Level::Trace => {} // Ignore these
-        }
-        Ok(())
-    }
-}
 
 #[derive(Parser, Debug)]
 #[clap(name = "gitpatcher", about = "A patching system based on git", version = env!("VERGEN_GIT_DESCRIBE"))]
@@ -181,11 +156,15 @@ fn regenerate_patches(opts: RegeneratePatchOpts) -> anyhow::Result<()> {
     let upstream_commit = upstream_obj.as_commit().with_context(|| {
         format!("Upstream ref must be either a tree or a commit: {upstream_obj:?}")
     })?;
+    let plain = slog_term::PlainSyncDecorator::new(std::io::stdout());
     ::gitpatcher::regenerate_patches::regenerate_patches(
         upstream_commit,
         &mut patches,
         &patched_repo,
-        Logger::root(TerminalDrain.ignore_res(), o!()),
+        Logger::root(
+            std::sync::Mutex::new(slog_term::CompactFormat::new(plain).build()).fuse(),
+            o!(),
+        ),
         Default::default(),
     )?;
     println!("Success!");

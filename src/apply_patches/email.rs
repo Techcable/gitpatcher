@@ -291,7 +291,7 @@ impl EmailMessage {
             })
             .map_err(|cause| PatchApplyError::FailDelta {
                 cause,
-                delta: desc.clone(),
+                delta: Box::new(desc.clone()),
             })?
         }
         let updated_tree_oid = new_tree
@@ -352,7 +352,7 @@ pub enum InvalidEmailMessage {
 pub enum PatchApplyError {
     #[error("Failed to apply delta {delta}")]
     FailDelta {
-        delta: DeltaDesc,
+        delta: Box<DeltaDesc>,
         #[source]
         cause: DeltaApplyError,
     },

@@ -7,7 +7,7 @@ use nom::character::is_hex_digit;
 use nom::combinator::{opt, recognize};
 use nom::sequence::tuple;
 use nom::IResult;
-use slog::{debug, info, warn, Logger};
+use slog::{debug, info, trace, warn, Logger};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -114,6 +114,7 @@ pub fn regenerate_patches(
     // Remove old patches
     match target.state() {
         RepositoryState::Rebase | RepositoryState::RebaseInteractive => {
+            // TODO: This assumes the rebase is being applied against `upstream`
             warn!(logger, "Rebase detected - partial save");
             let mut rebase = patch_set.root_repo.open_rebase(None)?;
             let next = rebase.operation_current().unwrap_or(0);
@@ -220,8 +221,10 @@ pub fn regenerate_patches(
                 Some(delta) => delta,
                 None => continue, // no delta -> no changes to checkout
             };
-            if is_trivial_patch_change(delta, &git_version) {
-                debug!(logger, "Ignoring trivial patch: {}", patch.path.display());
+            let patch_logger =
+                logger.new(slog::o!("patch" => patch.path.to_string_lossy().into_owned()));
+            if is_trivial_patch_change(&patch_logger, delta, &git_version) {
+                debug!(patch_logger, "Ignoring trivial patch");
                 num_trivial += 1;
                 checkout_patches.path(&patch.path);
             }
@@ -236,17 +239,20 @@ pub fn regenerate_patches(
     info!(logger, "Patches for {}", target_name);
     Ok(())
 }
-fn is_trivial_patch_change(diff: &str, git_ver: &str) -> bool {
+fn is_trivial_patch_change(logger: &Logger, diff: &str, git_ver: &str) -> bool {
     const CHANGE_MARKERS: &[char] = &['+', '-'];
     let lines = diff.lines();
     // NOTE: Remember one more than we strictly need
     let mut remember = RememberLast::<_, 5>::new();
-    for line in lines {
+    for (idx, line) in lines.enumerate() {
         // We only care about lines that are (+|-)
         if !line.starts_with(CHANGE_MARKERS) {
             continue;
         }
-        if !is_trivial_line(line.as_bytes()) {
+        if is_trivial_line(line.as_bytes()) {
+            trace!(logger, "Ignoring 'trivial' line"; "line" => ?line, "number" => idx + 1);
+        } else {
+            trace!(logger, "Found non-trivial line"; "line" => ?line, "number" => idx + 1);
             // We found a non-trivial change in this patch
             remember.remember(&line);
         }

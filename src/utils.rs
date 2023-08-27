@@ -60,6 +60,8 @@ impl<'a> SimpleParser<'a> {
         }
     }
 }
+
+#[derive(Debug)]
 pub struct RememberLast<T: Clone, const LIMIT: usize> {
     // Items we remember from oldest to newest
     last: ArrayVec<T, LIMIT>,

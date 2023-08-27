@@ -1,6 +1,7 @@
 use git2::Commit;
 use std::ops::Range;
 
+#[derive(Debug)]
 pub struct CommitMessage<'a> {
     full: &'a str,
     summary_range: Range<usize>,
@@ -38,10 +39,10 @@ impl<'a> CommitMessage<'a> {
             .unwrap_or(0)
             + summary_end;
         // Strip trailing whitespace
-        let body_end = potential_body
-            .rfind(|c: char| !c.is_whitespace())
-            .unwrap_or(potential_body.len())
-            + summary_end;
+        let body_end = match potential_body.rfind(|c: char| !c.is_whitespace()) {
+            Some(non_ws_idx) => non_ws_idx + 1, // becasue this is exclusive, we need to offset by 1
+            None => potential_body.len(),
+        } + summary_end;
         Ok(CommitMessage {
             full,
             summary_range: summary_start..summary_end,

@@ -42,7 +42,7 @@ repository = "https://github.com/Techcable/gitpatcher"
 slog = "2.7"
 
 [workspace.dependencies.git2]
-version = "0.17"
+version = "0.18"
 # We don't need https
 default-features = false
 

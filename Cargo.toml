@@ -32,6 +32,8 @@ once_cell = "1.18"
 # Used for tests
 testdir = "0.8"
 scratch = "1"
+# Used to call out to external git process
+duct.workspace = true
 
 [workspace]
 members = ["bin"]
@@ -49,6 +51,8 @@ repository = "https://github.com/Techcable/gitpatcher"
 slog = "2.7"
 # UTF8 paths
 camino = "1.1.6"
+# Subprocesses
+duct = "0.13.6"
 
 [workspace.dependencies.git2]
 version = "0.19"

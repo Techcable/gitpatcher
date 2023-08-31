@@ -1,24 +1,16 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::fmt::format;
-use std::ops::Sub;
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context};
 use bstr::{BString, ByteSlice, B};
 use git2::{Repository, RepositoryInitOptions};
-use testdir::private::cargo_metadata::DependencyKind::Build;
 
 use crate::paper::repo::SubmoduleId::Bukkit;
 
 pub const PAPER_URL: &str = "https://github.com/PaperMC/Paper.git";
 /// Latest commit as of Aug 30th, 2023
 pub const PINNED_PAPER_COMMIT: &str = "b4e3b3d1dd447bac4cbf478595c1ec320bc6dd4b";
-
-pub fn path_to_utf8(path: &Path) -> anyhow::Result<&str> {
-    path.to_str()
-        .ok_or_else(|| anyhow!("Path is not UTF8: {:?}", path.display()))
-}
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, derive_more::FromStr)]
 pub enum SubmoduleId {
@@ -75,65 +67,30 @@ struct SharedRepo {
 pub fn setup_shared_repo() -> anyhow::Result<SharedRepo> {
     // This is where the cache magic happens
     let repo_cache_dir = ::scratch::path("papermc-repo-cache");
+    let repo_dir = repo_cache_dir.join("Paper.git");
     let shared_repo = Repository::init_opts(
-        repo_cache_dir.join("Paper.git"),
+        repo_dir,
         RepositoryInitOptions::new()
-            .bare(true)
+            // NOTE: NOT bare, because that makes submodules hard
+            //.bare(true)
             .mkdir(true)
             .origin_url(PAPER_URL),
     )?;
-    if shared_repo.find_reference(PINNED_PAPER_COMMIT).is_err() {
+    assert_eq!(repo_dir, shared_repo.path());
+    // generic fetch for everything possible
+    duct::cmd!("git", "fetch").dir(&repo_dir).run()?;
+    // checkout pinned commit
+    duct::cmd!("git", "checkout", "--force", PINNED_PAPER_COMMIT)
+        .dir()
+        .run()?;
+    assert_eq!(
         shared_repo
-            .find_remote("origin")
-            .context("Can't resolve remote `origin`")?
-            .fetch(
-                &["master", PINNED_PAPER_COMMIT],
-                None,
-                Some("sync shared repo"),
-            )
-            .with_context(|| {
-                format!("Failed to fetch commit {PINNED_PAPER_COMMIT:?} from remote")
-            })?;
-    }
-    let pinned_commit = shared_repo
-        .find_reference(PINNED_PAPER_COMMIT)
-        .and_then(|reference| reference.peel_to_commit())
-        .with_context(|| format!("Unable to resolve commit {PINNED_PAPER_COMMIT:?}"))?;
-    let mut shared_master_branch = shared_repo
-        .branch("master", &pinned_commit, true)
-        .with_context(|| format!("Failed to set master branch to {pinned_commit:?}"))?;
-    shared_master_branch
-        .set_upstream(Some("origin/master"))
-        .context("Failed to set upstream branch for shared repo")?;
-    {
-        let submodules = shared_repo
-            .submodules()
-            .context("Unable to resolve submodules")?;
-    }
-    let mut shared_submodules = shared_repo
-        .submodules()
-        .context("Unable to resolve submodules")?;
-    let mut res_submodule = HashMap::with_capacity(SubmoduleId::ALL.len());
-    for submodule in &mut shared_submodules {
-        let name = submodule
-            .name_bytes()
-            .to_str()
-            .context("Failed to convert submodule name")?;
-        let resolved_id =
-            SubmoduleId::from_full_name(name).context("Unexpected submodule name for PaperMC")?;
-        let repo = submodule.repo_init(true)?;
-        submodule
-            .clone(None)
-            .with_context(|| format!("Failed to clone submodule {name:?}"))?;
-        match res_submodule.entry(resolved_id) {
-            Entry::Occupied(_) => {
-                panic!("Conflicting entries for {resolved_id:?}");
-            }
-            Entry::Vacant(entry) => {
-                entry.insert(repo);
-            }
-        }
-    }
+            .statuses(None)
+            .context("Failed to determine repo status")?
+            .len(),
+        0,
+        "Untracked files for repo: {repo_dir:?}"
+    );
     Ok(SharedRepo {
         repo_cache_dir,
         paper_repo: shared_repo,

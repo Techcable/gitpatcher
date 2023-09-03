@@ -1,4 +1,5 @@
 use bstr::ByteSlice;
+use camino::{Utf8Path, Utf8PathBuf};
 use git2::build::CheckoutBuilder;
 use git2::{Commit, DiffFormat, DiffOptions, Repository, RepositoryState};
 use nom::branch::alt;
@@ -11,7 +12,6 @@ use slog::{debug, info, trace, warn, Logger};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use crate::format_patches::{FormatOptions, PatchFormatError, PatchFormatter};
@@ -19,11 +19,11 @@ use crate::utils::RememberLast;
 
 pub struct PatchFileSet<'a> {
     root_repo: &'a Repository,
-    patch_dir: PathBuf,
+    patch_dir: Utf8PathBuf,
     patches: Vec<PatchFile>,
 }
 impl<'a> PatchFileSet<'a> {
-    pub fn load(target: &'a Repository, patch_dir: &Path) -> Result<Self, PatchError> {
+    pub fn load(target: &'a Repository, patch_dir: &Utf8Path) -> Result<Self, PatchError> {
         assert!(patch_dir.is_relative());
         let mut set = PatchFileSet {
             root_repo: target,
@@ -60,16 +60,20 @@ impl<'a> PatchFileSet<'a> {
     /// As long as you keep your changes saved in that repo, you'll be fine.
     pub fn stage_changes(&mut self) -> Result<(), git2::Error> {
         let mut index = self.root_repo.index()?;
-        index.add_all([&self.patch_dir], git2::IndexAddOption::DEFAULT, None)?;
+        index.add_all(
+            [self.patch_dir.as_std_path()],
+            git2::IndexAddOption::DEFAULT,
+            None,
+        )?;
         index.write()
     }
 }
 pub struct PatchFile {
     index: usize,
-    path: PathBuf,
+    path: Utf8PathBuf,
 }
 impl PatchFile {
-    fn parse(parent: &Path, file_name: &str) -> Result<Self, PatchError> {
+    fn parse(parent: &Utf8Path, file_name: &str) -> Result<Self, PatchError> {
         // Must match ASCII regex `[\d]{4}-(commit_name).patch`
         if file_name.len() >= 5 && file_name.as_bytes()[4] == b'-' && file_name.ends_with(".patch")
         {
@@ -106,11 +110,7 @@ pub fn regenerate_patches(
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or_else(|| panic!("Invalid path for target repo: {}", target.path().display()));
-    info!(
-        logger,
-        "Formatting patches for {}",
-        patch_set.patch_dir.display()
-    );
+    info!(logger, "Formatting patches for {}", patch_set.patch_dir);
     // Remove old patches
     match target.state() {
         RepositoryState::Rebase | RepositoryState::RebaseInteractive => {
@@ -155,7 +155,7 @@ pub fn regenerate_patches(
         let len = parents.len();
         parents.truncate(len - 1); // Trim last (empty)
         for path in parents {
-            let entry = head_tree.get_path(path)?;
+            let entry = head_tree.get_path(path.as_std_path())?;
             let child_tree = match filtered_tree {
                 None => {
                     let tree = entry.to_object(patch_set.root_repo)?.peel_to_tree()?;
@@ -183,6 +183,7 @@ pub fn regenerate_patches(
             .diff_tree_to_index(Some(&filtered_tree), None, None)?;
         let mut deltas_by_path = HashMap::new();
         diff.print(DiffFormat::Patch, |delta, _hunk, line| {
+            // TODO: Propagate errors instead of panicking
             let buffer = deltas_by_path
                 .entry(delta.new_file().path().unwrap().to_path_buf())
                 .or_insert_with(String::new);
@@ -217,16 +218,15 @@ pub fn regenerate_patches(
                 .trim()
                 .to_string()
             };
-            let delta = match deltas_by_path.get(&patch.path) {
+            let delta = match deltas_by_path.get(patch.path.as_std_path()) {
                 Some(delta) => delta,
                 None => continue, // no delta -> no changes to checkout
             };
-            let patch_logger =
-                logger.new(slog::o!("patch" => patch.path.to_string_lossy().into_owned()));
+            let patch_logger = logger.new(slog::o!("patch" => patch.path.as_str().to_string()));
             if is_trivial_patch_change(&patch_logger, delta, &git_version) {
                 debug!(patch_logger, "Ignoring trivial patch");
                 num_trivial += 1;
-                checkout_patches.path(&patch.path);
+                checkout_patches.path(patch.path.as_std_path());
             }
         }
         if num_trivial > 0 {
@@ -311,9 +311,9 @@ pub enum PatchError {
     InvalidPatchName { name: String },
     #[error("Failed to format patches: {0}")]
     PatchFormatFailed(#[from] PatchFormatError),
-    #[error("Missing patch dir {}: {cause}", patch_dir.display())]
+    #[error("Missing patch dir {}: {cause}", patch_dir)]
     MissingPatchDir {
-        patch_dir: PathBuf,
+        patch_dir: Utf8PathBuf,
         #[source]
         cause: git2::Error,
     },

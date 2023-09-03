@@ -24,6 +24,7 @@ static = ["libz-sys/static", "vendored-libgit2"]
 gitpatcher = { version = "0.2.0", path = ".." }
 anyhow = "1"
 slog.workspace = true
+camino.workspace = true
 clap = { version = "4.3", features = ["derive"] }
 git2.workspace = true
 # Confiured to maybe be static

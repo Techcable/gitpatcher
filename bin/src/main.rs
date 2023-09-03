@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context};
+use camino::Utf8PathBuf;
 use clap::{Parser, Subcommand};
 use git2::build::CheckoutBuilder;
 use git2::{ObjectType, Repository, ResetType};
@@ -54,7 +55,7 @@ struct RegeneratePatchOpts {
     /// A upstream git reference to compare the patched repo against
     upstream: String,
     /// The directory to place the generated patches in
-    patch_dir: PathBuf,
+    patch_dir: Utf8PathBuf,
 }
 
 fn main() -> anyhow::Result<()> {

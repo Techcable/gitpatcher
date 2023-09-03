@@ -16,6 +16,7 @@ arrayvec = "0.7.2"
 time = { version = "0.3", features = ["macros", "parsing"] }
 slog.workspace = true
 git2.workspace = true
+camino.workspace = true
 # Used to apply patches
 diffy = "0.3"
 
@@ -40,6 +41,8 @@ repository = "https://github.com/Techcable/gitpatcher"
 
 [workspace.dependencies]
 slog = "2.7"
+# UTF8 paths
+camino = "1.1.6"
 
 [workspace.dependencies.git2]
 version = "0.18"

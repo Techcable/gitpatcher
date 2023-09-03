@@ -1,9 +1,9 @@
 use crate::format_patches::format::{CommitMessage, InvalidCommitMessage};
 use crate::utils::SimpleParser;
 use bstr::{BStr, BString, ByteSlice, ByteVec};
+use camino::Utf8PathBuf;
 use git2::{Commit, DiffOptions, EmailCreateOptions, Oid, Repository};
 use slog::{error, info, Logger};
-use std::path::PathBuf;
 
 mod format;
 
@@ -28,14 +28,14 @@ pub struct PatchFormatter<'repo> {
     logger: Logger,
     base: Commit<'repo>,
     last_commit: Commit<'repo>,
-    out_dir: PathBuf,
+    out_dir: Utf8PathBuf,
     opts: FormatOptions,
     target: &'repo Repository,
 }
 impl<'repo> PatchFormatter<'repo> {
     pub fn new(
         logger: Logger,
-        out_dir: PathBuf,
+        out_dir: Utf8PathBuf,
         target: &'repo Repository,
         base: Commit<'repo>,
         opts: FormatOptions,
@@ -178,17 +178,19 @@ pub enum PatchFormatError {
         #[source]
         cause: InvalidCommitMessage,
     },
-    #[error("Error writing to {}: {cause}", patch_file.display())]
+    #[error("Error writing to {patch_file}: {cause}")]
     PatchWriteError {
-        patch_file: PathBuf,
+        patch_file: Utf8PathBuf,
         #[source]
         cause: std::io::Error,
     },
-    #[error("Internal error cleaning patch {}: {cause}", patch_file.display())]
+    #[error("Internal error cleaning patch {patch_file}: {cause}")]
     PatchCleanupError {
-        patch_file: PathBuf,
+        patch_file: Utf8PathBuf,
         cause: CleanupPatchErr,
     },
+    #[error(transparent)]
+    PathNotUtf8(#[from] camino::FromPathBufError),
     #[error("Internal git error: {0}")]
     InternalGit(#[from] git2::Error),
 }

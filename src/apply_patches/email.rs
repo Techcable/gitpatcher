@@ -1,6 +1,6 @@
 use bstr::ByteSlice;
+use camino::{Utf8Path, Utf8PathBuf};
 use std::fmt::{self, Display};
-use std::path::{Path, PathBuf};
 
 use git2::build::TreeUpdateBuilder;
 use git2::{Delta as DeltaStatus, FileMode, Repository, ResetType, Signature};
@@ -206,7 +206,7 @@ impl EmailMessage {
                     "New file should not exist"
                 );
                 let path = ctx.desc.old_path().expect("Old file should have path");
-                ctx.result_tree.remove(path);
+                ctx.result_tree.remove(path.as_std_path().to_path_buf());
                 return Ok(());
             }
             DeltaStatus::Added
@@ -269,8 +269,11 @@ impl EmailMessage {
         let patched_bytes = diffy::apply_bytes(existing_bytes, &diffy_patch)
             .map_err(|cause| DeltaApplyError::FailApplyPatch { cause })?;
         let patched_oid = ctx.repo.blob(&patched_bytes).unexpected()?;
-        ctx.result_tree
-            .upsert(ctx.desc.new_path().unwrap(), patched_oid, FileMode::Blob);
+        ctx.result_tree.upsert(
+            ctx.desc.new_path().unwrap().as_std_path(),
+            patched_oid,
+            FileMode::Blob,
+        );
         Ok(())
     }
 
@@ -363,6 +366,8 @@ pub enum PatchApplyError {
     },
     #[error(transparent)]
     ForbiddenAbsolutePath(#[from] AbsolutePathError),
+    #[error(transparent)]
+    InvalidUtf8Path(#[from] camino::FromPathBufError),
     #[error("Internal git error: {cause}")]
     UnexpectedGit {
         #[from]
@@ -371,6 +376,14 @@ pub enum PatchApplyError {
         #[backtrace]
         backtrace: std::backtrace::Backtrace,
     },
+}
+impl From<BadPathError> for PatchApplyError {
+    fn from(value: BadPathError) -> Self {
+        match value {
+            BadPathError::AbsolutePath(cause) => cause.into(),
+            BadPathError::InvalidUtf8Path(cause) => cause.into(),
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -381,7 +394,7 @@ pub enum DeltaApplyError {
         cause: git2::Error,
     },
     #[error("Missing original file")]
-    MissingOriginalFile { path: PathBuf },
+    MissingOriginalFile { path: std::path::PathBuf },
     #[error("Unexpected delta status")]
     UnexpectedDeltaStatus { status: DeltaStatus },
     #[error("Unexpected binary delta")]
@@ -479,10 +492,10 @@ fn delta_status_name(status: DeltaStatus) -> &'static str {
 #[derive(Debug, Clone, thiserror::Error)]
 #[error(
     "Absolute paths are forbidden for {role} (path `{path}`)",
-    role = role.unwrap_or("?"), path = path.display()
+    role = role.unwrap_or("?")
 )]
 pub struct AbsolutePathError {
-    path: PathBuf,
+    path: Utf8PathBuf,
     role: Option<&'static str>,
 }
 
@@ -495,22 +508,19 @@ pub struct DeltaDesc {
 }
 
 impl DeltaDesc {
-    fn old_path(&self) -> Option<&Path> {
+    fn old_path(&self) -> Option<&Utf8Path> {
         self.old_file.path.as_deref()
     }
-    fn new_path(&self) -> Option<&Path> {
+    fn new_path(&self) -> Option<&Utf8Path> {
         self.new_file.path.as_deref()
     }
-    fn from_git(
-        index: Option<usize>,
-        git_delta: &git2::DiffDelta,
-    ) -> Result<Self, AbsolutePathError> {
+    fn from_git(index: Option<usize>, git_delta: &git2::DiffDelta) -> Result<Self, BadPathError> {
         let old_file = DeltaFileDesc::try_from(git_delta.old_file()).map_err(|mut err| {
-            err.role = Some("old_file");
+            err.set_role("old_file");
             err
         })?;
         let new_file = DeltaFileDesc::try_from(git_delta.new_file()).map_err(|mut err| {
-            err.role = Some("new_file");
+            err.set_role("new_file");
             err
         })?;
         Ok(DeltaDesc {
@@ -546,7 +556,7 @@ impl Display for DeltaDesc {
 }
 #[derive(Debug, Clone)]
 pub struct DeltaFileDesc {
-    path: Option<PathBuf>,
+    path: Option<Utf8PathBuf>,
     _oid: git2::Oid,
     binary: bool,
 }
@@ -557,24 +567,45 @@ impl Display for DeltaFileDesc {
                 if self.binary {
                     f.write_str("binary ")?;
                 }
-                Display::fmt(&path.display(), f)
+                Display::fmt(path, f)
             }
             None => f.write_str("/dev/null"),
         }
     }
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum BadPathError {
+    #[error(transparent)]
+    AbsolutePath(#[from] AbsolutePathError),
+    #[error(transparent)]
+    InvalidUtf8Path(#[from] camino::FromPathBufError),
+}
+
+impl BadPathError {
+    fn set_role(&mut self, new_role: &'static str) {
+        if let BadPathError::AbsolutePath(AbsolutePathError { ref mut role, .. }) = *self {
+            *role = Some(new_role);
+        }
+    }
+}
 impl<'a> TryFrom<git2::DiffFile<'a>> for DeltaFileDesc {
-    type Error = AbsolutePathError;
+    type Error = BadPathError;
 
     fn try_from(git_file: git2::DiffFile<'a>) -> Result<Self, Self::Error> {
         match git_file.path() {
-            Some(path) if path.is_absolute() => Err(AbsolutePathError {
-                role: None,
-                path: git_file.path().unwrap().into(),
-            }),
+            Some(path) if path.is_absolute() => {
+                Err(BadPathError::AbsolutePath(AbsolutePathError {
+                    role: None,
+                    path: git_file.path().unwrap().to_path_buf().try_into()?,
+                }))
+            }
             None | Some(_) => Ok(DeltaFileDesc {
-                path: git_file.path().map(PathBuf::from),
+                path: git_file
+                    .path()
+                    .map(std::path::PathBuf::from)
+                    .map(Utf8PathBuf::try_from)
+                    .transpose()?,
                 binary: git_file.is_binary(),
                 _oid: git_file.id(),
             }),

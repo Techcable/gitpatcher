@@ -3,6 +3,8 @@ use std::iter::Peekable;
 use arrayvec::ArrayVec;
 use bstr::{BStr, ByteSlice};
 
+pub mod slog;
+
 pub struct SimpleParser<'a> {
     lines: Peekable<bstr::Lines<'a>>,
     line_number: usize,

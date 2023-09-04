@@ -6,7 +6,7 @@ use std::str::FromStr;
 use bstr::ByteSlice;
 use camino::{Utf8Path, Utf8PathBuf};
 use git2::build::CheckoutBuilder;
-use git2::{Commit, DiffFormat, DiffOptions, Repository, RepositoryState};
+use git2::{Commit, DiffFormat, DiffOptions, Repository, RepositoryState, Tree};
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take, take_until, take_while1};
 use nom::character::is_hex_digit;
@@ -16,15 +16,15 @@ use nom::IResult;
 use slog::{debug, info, trace, warn, Logger};
 
 use crate::format_patches::{FormatOptions, PatchFormatError, PatchFormatter};
-use crate::utils::RememberLast;
+use crate::utils::{slog::SlogValueAdapter, RememberLast};
 
-pub struct PatchFileSet<'a> {
-    root_repo: &'a Repository,
+pub struct PatchFileSet<'repo> {
+    root_repo: &'repo Repository,
     patch_dir: Utf8PathBuf,
     patches: Vec<PatchFile>,
 }
-impl<'a> PatchFileSet<'a> {
-    pub fn load(target: &'a Repository, patch_dir: &Utf8Path) -> Result<Self, PatchError> {
+impl<'repo> PatchFileSet<'repo> {
+    pub fn load(target: &'repo Repository, patch_dir: &Utf8Path) -> Result<Self, PatchError> {
         assert!(patch_dir.is_relative());
         let mut set = PatchFileSet {
             root_repo: target,
@@ -94,78 +94,102 @@ impl PatchFile {
     }
 }
 
-#[derive(Default)]
 pub struct RegenerateOptions {
     pub format_opts: FormatOptions,
+    /// Apply a 'partial save' to the rebase
+    pub allow_rebase_partial_save: bool,
+}
+impl Default for RegenerateOptions {
+    fn default() -> Self {
+        RegenerateOptions {
+            format_opts: Default::default(),
+            allow_rebase_partial_save: true,
+        }
+    }
 }
 
-pub fn regenerate_patches(
-    base: &Commit,
-    patch_set: &mut PatchFileSet,
-    target: &Repository,
+struct RegeneratePatches<'a, 'repo> {
+    base: &'a Commit<'repo>,
+    patch_set: &'a mut PatchFileSet<'repo>,
+    target: &'repo Repository,
     logger: Logger,
     options: RegenerateOptions,
-) -> Result<(), PatchError> {
-    let target_name = target
-        .path()
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_else(|| panic!("Invalid path for target repo: {}", target.path().display()));
-    info!(logger, "Formatting patches for {}", patch_set.patch_dir);
-    // Remove old patches
-    match target.state() {
-        RepositoryState::Rebase | RepositoryState::RebaseInteractive => {
-            // TODO: This assumes the rebase is being applied against `upstream`
-            warn!(logger, "Rebase detected - partial save");
-            let mut rebase = patch_set.root_repo.open_rebase(None)?;
-            let next = rebase.operation_current().unwrap_or(0);
-            for patch in &patch_set.patches[..next] {
-                std::fs::remove_file(&patch.path)?;
-            }
+}
+impl<'a, 'repo> RegeneratePatches<'a, 'repo> {
+    fn delete_patches_range(&mut self, start_index: usize) -> Result<(), PatchError> {
+        assert!(start_index <= self.patch_set.patches.len());
+        let patches = self.patch_set.patches.as_slice();
+        let to_clean = &patches[start_index..];
+        info!(
+            self.logger, "Removing old patch files";
+            "start_index" => start_index,
+            "total" => patches.len(),
+            "count" => to_clean.len()
+        );
+        for (offset, patch) in to_clean.iter().enumerate() {
+            let index = start_index + offset;
+            debug!(self.logger, "Deleting patch file"; "path" => patch.path.to_slog(), "idx" => index);
+            std::fs::remove_file(&patch.path)?;
         }
-        RepositoryState::Clean => {
-            for patch in &patch_set.patches {
-                std::fs::remove_file(&patch.path)?;
-            }
-        }
-        state => {
-            return Err(PatchError::PatchedRepoInvalidState { state });
-        }
+        Ok(())
     }
-
-    // Regenerate the patches
-    {
+    /// Regenerate the patches
+    fn regenerate_patches(&mut self) -> Result<(), PatchError> {
         PatchFormatter::new(
-            logger.clone(),
-            patch_set.patch_dir.clone(),
-            target,
-            base.clone(),
-            options.format_opts,
+            self.logger.clone(),
+            self.patch_set.patch_dir.clone(),
+            self.target,
+            self.base,
+            &mut self.options.format_opts,
         )?
         .generate_all()?;
-        patch_set.reload_files()?;
+        self.patch_set.reload_files()?;
+        Ok(())
     }
 
-    patch_set.stage_changes()?;
+    /// Ensure `target.state()` is valid, removing any intermediate changes
+    fn cleanup_repo_state(&mut self) -> Result<(), PatchError> {
+        // Remove old patches
+        match self.target.state() {
+            state @ RepositoryState::Rebase | state @ RepositoryState::RebaseInteractive => {
+                if !self.options.allow_rebase_partial_save {
+                    slog::error!(self.logger, "Rebase detected, but partial save not allowed");
+                    return Err(PatchError::PatchedRepoInvalidState { state });
+                }
+                // TODO: This assumes the rebase is being applied against `upstream`
+                let mut rebase = self.patch_set.root_repo.open_rebase(None)?;
+                let next = rebase.operation_current().unwrap_or(0);
+                warn!(self.logger, "Rebase detected. Performing partial save"; "next_patch_num" => next);
+                self.delete_patches_range(next)?;
+                Ok(())
+            }
+            RepositoryState::Clean => {
+                self.delete_patches_range(0)?;
+                Ok(())
+            }
+            state => Err(PatchError::PatchedRepoInvalidState { state }),
+        }
+    }
 
-    // Remove any 'trivial' patches
-    {
-        let head_tree = patch_set.root_repo.head()?.peel_to_tree()?;
+    /// Generate a 'filtered' copy of the `HEAD` tree,
+    /// which contains only the entries that are in the `patch_dir`.
+    fn generate_filtered_tree(&mut self) -> Result<Tree<'repo>, PatchError> {
+        let head_tree = self.patch_set.root_repo.head()?.peel_to_tree()?;
         let mut filtered_tree = None;
-        let mut parents = patch_set.patch_dir.ancestors().collect::<Vec<_>>();
+        let mut parents = self.patch_set.patch_dir.ancestors().collect::<Vec<_>>();
         let len = parents.len();
         parents.truncate(len - 1); // Trim last (empty)
         for path in parents {
             let entry = head_tree.get_path(path.as_std_path())?;
             let child_tree = match filtered_tree {
                 None => {
-                    let tree = entry.to_object(patch_set.root_repo)?.peel_to_tree()?;
+                    let tree = entry.to_object(self.patch_set.root_repo)?.peel_to_tree()?;
                     // Use our initial tree which is a copy of `patch_dir` itself
-                    patch_set.root_repo.treebuilder(Some(&tree))?
+                    self.patch_set.root_repo.treebuilder(Some(&tree))?
                 }
                 Some(existing_tree) => existing_tree,
             };
-            let mut builder = patch_set.root_repo.treebuilder(None)?;
+            let mut builder = self.patch_set.root_repo.treebuilder(None)?;
             builder.insert(
                 path.file_name()
                     .unwrap_or_else(|| panic!("Invalid parent {:?}", path)),
@@ -174,12 +198,25 @@ pub fn regenerate_patches(
             )?;
             filtered_tree = Some(builder);
         }
-        let filtered_tree = patch_set
+        let filtered_tree = self
+            .patch_set
             .root_repo
             .find_tree(filtered_tree.unwrap().write()?)?;
+        debug!(
+            self.logger, "Generated filtered tree";
+            "filtered_tree" => %filtered_tree.id(),
+            "filtered_tree_len" => filtered_tree.len(),
+            "head_tree" => %head_tree.id()
+        );
+        Ok(filtered_tree)
+    }
+
+    fn remove_trivial_patches(&mut self) -> Result<(), PatchError> {
+        let filtered_tree = self.generate_filtered_tree()?;
         let mut ops = DiffOptions::new();
         ops.ignore_whitespace_eol(true);
-        let diff = patch_set
+        let diff = self
+            .patch_set
             .root_repo
             .diff_tree_to_index(Some(&filtered_tree), None, None)?;
         let mut deltas_by_path = HashMap::new();
@@ -200,7 +237,7 @@ pub fn regenerate_patches(
         checkout_patches.recreate_missing(true);
         checkout_patches.force();
         let mut num_trivial = 0;
-        for patch in &patch_set.patches {
+        for patch in &self.patch_set.patches {
             let git_version = {
                 let mut reader = BufReader::new(File::open(&patch.path)?);
                 let mut remember = RememberLast::<_, 2>::new();
@@ -223,7 +260,9 @@ pub fn regenerate_patches(
                 Some(delta) => delta,
                 None => continue, // no delta -> no changes to checkout
             };
-            let patch_logger = logger.new(slog::o!("patch" => patch.path.as_str().to_string()));
+            let patch_logger = self
+                .logger
+                .new(slog::o!("patch" => patch.path.as_str().to_string()));
             if is_trivial_patch_change(&patch_logger, delta, &git_version) {
                 debug!(patch_logger, "Ignoring trivial patch");
                 num_trivial += 1;
@@ -231,13 +270,48 @@ pub fn regenerate_patches(
             }
         }
         if num_trivial > 0 {
-            patch_set
+            self.patch_set
                 .root_repo
                 .checkout_head(Some(&mut checkout_patches))?;
         }
+        Ok(())
     }
+}
 
-    info!(logger, "Patches for {}", target_name);
+pub fn regenerate_patches<'a, 'repo>(
+    base: &'a Commit<'repo>,
+    patch_set: &'a mut PatchFileSet<'repo>,
+    target: &'repo Repository,
+    parent_logger: Logger,
+    options: RegenerateOptions,
+) -> Result<(), PatchError> {
+    let target_repo_path =
+        Utf8Path::from_path(target.path()).ok_or_else(|| PatchError::InvalidRepoPath {
+            path: target.path().to_owned(),
+        })?;
+    let logger = parent_logger.new(slog::o!(
+        "patch_dir" => patch_set.patch_dir.to_slog(),
+        "target_repo" => target_repo_path.to_slog(),
+        "base_commit" => base.id().to_slog(),
+    ));
+    info!(logger, "Formatting patches"; "count" => patch_set.patches.len());
+    let mut regen = RegeneratePatches {
+        base,
+        patch_set,
+        target,
+        logger,
+        options,
+    };
+    regen.cleanup_repo_state()?;
+
+    regen.regenerate_patches()?;
+
+    regen.patch_set.stage_changes()?;
+
+    // Remove any 'trivial' patches
+    regen.remove_trivial_patches()?;
+
+    info!(regen.logger, "Finished regenerating patches");
     Ok(())
 }
 fn is_trivial_patch_change(logger: &Logger, diff: &str, git_ver: &str) -> bool {
@@ -310,11 +384,14 @@ pub enum PatchError {
     PatchedRepoInvalidState { state: RepositoryState },
     #[error("Invalid name for patch: {name:?}")]
     InvalidPatchName { name: String },
+    #[error("Invalid path for repo: {path:?}")]
+    InvalidRepoPath { path: std::path::PathBuf },
     #[error("Failed to format patches")]
     PatchFormatFailed(#[from] PatchFormatError),
-    #[error("Missing patch dir {}", patch_dir)]
+    #[error("Missing patch dir {patch_dir} in {root_desc}")]
     MissingPatchDir {
         patch_dir: Utf8PathBuf,
+        root_desc: String,
         #[source]
         cause: git2::Error,
     },

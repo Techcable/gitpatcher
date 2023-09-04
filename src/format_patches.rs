@@ -25,21 +25,21 @@ impl Default for FormatOptions {
     }
 }
 
-pub struct PatchFormatter<'repo> {
+pub struct PatchFormatter<'a, 'repo> {
     logger: Logger,
-    base: Commit<'repo>,
+    base: &'a Commit<'repo>,
     last_commit: Commit<'repo>,
     out_dir: Utf8PathBuf,
-    opts: FormatOptions,
+    opts: &'a mut FormatOptions,
     target: &'repo Repository,
 }
-impl<'repo> PatchFormatter<'repo> {
+impl<'a, 'repo> PatchFormatter<'a, 'repo> {
     pub fn new(
         logger: Logger,
         out_dir: Utf8PathBuf,
         target: &'repo Repository,
-        base: Commit<'repo>,
-        opts: FormatOptions,
+        base: &'a Commit<'repo>,
+        opts: &'a mut FormatOptions,
     ) -> Result<Self, PatchFormatError> {
         Ok(PatchFormatter {
             logger,

@@ -310,17 +310,17 @@ pub enum PatchError {
     PatchedRepoInvalidState { state: RepositoryState },
     #[error("Invalid name for patch: {name:?}")]
     InvalidPatchName { name: String },
-    #[error("Failed to format patches: {0}")]
+    #[error("Failed to format patches")]
     PatchFormatFailed(#[from] PatchFormatError),
-    #[error("Missing patch dir {}: {cause}", patch_dir)]
+    #[error("Missing patch dir {}", patch_dir)]
     MissingPatchDir {
         patch_dir: Utf8PathBuf,
         #[source]
         cause: git2::Error,
     },
     /// An unexpected error occurred using git
-    #[error("Unexpected git error: {0}")]
+    #[error("Unexpected git error")]
     Git(#[from] git2::Error),
-    #[error("Unexpected IO error: {0}")]
+    #[error("Unexpected IO error")]
     Io(#[from] std::io::Error),
 }

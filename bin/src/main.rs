@@ -1,3 +1,7 @@
+use std::env;
+use std::ffi::OsStr;
+use std::path::PathBuf;
+
 use anyhow::{anyhow, Context};
 use camino::Utf8PathBuf;
 use clap::{Parser, Subcommand};
@@ -6,9 +10,6 @@ use git2::{ObjectType, Repository, ResetType};
 use gitpatcher::apply_patches::EmailMessage;
 use gitpatcher::regenerate_patches::PatchFileSet;
 use slog::{o, Drain, Logger};
-use std::env;
-use std::ffi::OsStr;
-use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[clap(name = "gitpatcher", about = "A patching system based on git", version = env!("VERGEN_GIT_DESCRIBE"))]

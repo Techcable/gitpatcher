@@ -1,6 +1,7 @@
+use std::iter::Peekable;
+
 use arrayvec::ArrayVec;
 use bstr::{BStr, ByteSlice};
-use std::iter::Peekable;
 
 pub struct SimpleParser<'a> {
     lines: Peekable<bstr::Lines<'a>>,

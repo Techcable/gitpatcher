@@ -1,5 +1,6 @@
-use git2::Commit;
 use std::ops::Range;
+
+use git2::Commit;
 
 #[derive(Debug)]
 pub struct CommitMessage<'a> {

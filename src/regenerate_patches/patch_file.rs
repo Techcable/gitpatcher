@@ -1,3 +1,8 @@
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+use std::str::FromStr;
+
 use bstr::ByteSlice;
 use camino::{Utf8Path, Utf8PathBuf};
 use git2::build::CheckoutBuilder;
@@ -9,10 +14,6 @@ use nom::combinator::{opt, recognize};
 use nom::sequence::tuple;
 use nom::IResult;
 use slog::{debug, info, trace, warn, Logger};
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::str::FromStr;
 
 use crate::format_patches::{FormatOptions, PatchFormatError, PatchFormatter};
 use crate::utils::RememberLast;

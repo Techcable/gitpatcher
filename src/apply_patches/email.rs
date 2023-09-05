@@ -1,7 +1,7 @@
-use bstr::ByteSlice;
-use camino::{Utf8Path, Utf8PathBuf};
 use std::fmt::{self, Display};
 
+use bstr::ByteSlice;
+use camino::{Utf8Path, Utf8PathBuf};
 use git2::build::TreeUpdateBuilder;
 use git2::{Delta as DeltaStatus, FileMode, Repository, ResetType, Signature};
 use nom::bytes::complete::{tag, take_until, take_until1, take_while1, take_while_m_n};

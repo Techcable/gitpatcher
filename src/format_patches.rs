@@ -1,9 +1,10 @@
-use crate::format_patches::format::{CommitMessage, InvalidCommitMessage};
-use crate::utils::SimpleParser;
 use bstr::{BStr, BString, ByteSlice, ByteVec};
 use camino::Utf8PathBuf;
 use git2::{Commit, DiffOptions, EmailCreateOptions, Oid, Repository};
 use slog::{error, info, Logger};
+
+use crate::format_patches::format::{CommitMessage, InvalidCommitMessage};
+use crate::utils::SimpleParser;
 
 mod format;
 

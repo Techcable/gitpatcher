@@ -1,0 +1,5 @@
+reorder_imports = true
+# WARNING: This option is not stable
+#
+# https://github.com/rust-lang/rustfmt/issues/5083
+group_imports = "StdExternalCrate"

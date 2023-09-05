@@ -1,8 +1,10 @@
+use std::fmt::{Debug, Formatter};
 use std::iter::Peekable;
 
 use arrayvec::ArrayVec;
 use bstr::{BStr, ByteSlice};
 
+pub mod git;
 pub mod slog;
 
 pub struct SimpleParser<'a> {
@@ -127,3 +129,15 @@ where
 #[derive(Debug, thiserror::Error)]
 #[error("Unexpected EOF")]
 pub struct UnexpectedEof;
+
+#[derive(Copy, Clone, Eq, PartialEq, Hash, PartialOrd, Ord, Default)]
+#[repr(transparent)]
+pub struct OptionDebugWithoutSome<T>(Option<T>);
+impl<T: Debug> Debug for OptionDebugWithoutSome<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Some(ref some) => <T as Debug>::fmt(some, f),
+            None => f.write_str("None"),
+        }
+    }
+}

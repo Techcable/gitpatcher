@@ -6,7 +6,7 @@ use std::str::FromStr;
 use bstr::ByteSlice;
 use camino::{Utf8Path, Utf8PathBuf};
 use git2::build::CheckoutBuilder;
-use git2::{Commit, DiffFormat, DiffOptions, Repository, RepositoryState, Tree};
+use git2::{Commit, DiffFormat, DiffOptions, FileMode, Repository, RepositoryState, Tree};
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take, take_until, take_while1};
 use nom::character::is_hex_digit;
@@ -16,6 +16,7 @@ use nom::IResult;
 use slog::{debug, info, trace, warn, Logger};
 
 use crate::format_patches::{FormatOptions, PatchFormatError, PatchFormatter};
+use crate::utils::git::NestedTreeError;
 use crate::utils::{slog::SlogValueAdapter, RememberLast};
 
 pub struct PatchFileSet<'repo> {
@@ -171,37 +172,40 @@ impl<'a, 'repo> RegeneratePatches<'a, 'repo> {
         }
     }
 
+    /// Find a tree corresponding to the the patch dir,
+    /// given the root repository tree
+    fn find_patch_dir_from_root(
+        &self,
+        root_desc: &dyn ToString,
+        root_tree: &Tree<'repo>,
+    ) -> Result<Tree<'repo>, PatchError> {
+        root_tree
+            .get_path(&self.patch_set.patch_dir.as_std_path())
+            .and_then(|entry| entry.to_object(self.target))
+            .and_then(|obj| obj.peel_to_tree())
+            .map_err(|cause| PatchError::MissingPatchDir {
+                cause,
+                root_desc: root_desc.to_string(),
+                patch_dir: self.patch_set.patch_dir.clone(),
+            })
+    }
+
     /// Generate a 'filtered' copy of the `HEAD` tree,
     /// which contains only the entries that are in the `patch_dir`.
     fn generate_filtered_tree(&mut self) -> Result<Tree<'repo>, PatchError> {
         let head_tree = self.patch_set.root_repo.head()?.peel_to_tree()?;
-        let mut filtered_tree = None;
-        let mut parents = self.patch_set.patch_dir.ancestors().collect::<Vec<_>>();
-        let len = parents.len();
-        parents.truncate(len - 1); // Trim last (empty)
-        for path in parents {
-            let entry = head_tree.get_path(path.as_std_path())?;
-            let child_tree = match filtered_tree {
-                None => {
-                    let tree = entry.to_object(self.patch_set.root_repo)?.peel_to_tree()?;
-                    // Use our initial tree which is a copy of `patch_dir` itself
-                    self.patch_set.root_repo.treebuilder(Some(&tree))?
-                }
-                Some(existing_tree) => existing_tree,
-            };
-            let mut builder = self.patch_set.root_repo.treebuilder(None)?;
-            builder.insert(
-                path.file_name()
-                    .unwrap_or_else(|| panic!("Invalid parent {:?}", path)),
-                child_tree.write()?,
-                entry.filemode(),
-            )?;
-            filtered_tree = Some(builder);
-        }
-        let filtered_tree = self
-            .patch_set
-            .root_repo
-            .find_tree(filtered_tree.unwrap().write()?)?;
+        let patch_dir_tree = self.find_patch_dir_from_root(&"old HEAD", &head_tree)?;
+        let filtered_tree = crate::utils::git::create_nested_tree(
+            self.target,
+            self.patch_set.patch_dir.as_std_path(),
+            patch_dir_tree.as_object(),
+            FileMode::Tree,
+        )
+        .map_err(|cause| PatchError::FailedFilterTree {
+            cause,
+            patch_dir_tree: patch_dir_tree.id(),
+            head_tree: head_tree.id(),
+        })?;
         debug!(
             self.logger, "Generated filtered tree";
             "filtered_tree" => %filtered_tree.id(),
@@ -394,6 +398,14 @@ pub enum PatchError {
         root_desc: String,
         #[source]
         cause: git2::Error,
+    },
+    #[error(
+        "Failed to create filtered tree from patch dir tree {patch_dir_tree} and head {head_tree}"
+    )]
+    FailedFilterTree {
+        patch_dir_tree: git2::Oid,
+        head_tree: git2::Oid,
+        cause: NestedTreeError,
     },
     /// An unexpected error occurred using git
     #[error("Unexpected git error")]

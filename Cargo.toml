@@ -32,7 +32,7 @@ members = ["bin"]
 default-members = [".", "bin"]
 
 [workspace.package]
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 authors = ["Techcable <Techcable@techcable.net>"]
 readme = "README.md"

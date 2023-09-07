@@ -3,8 +3,6 @@ gitpatcher
 A rust library that uses git to maintain a set
 of patch files against a submodule.
 
-**WARNING**: Latest version v0.1.2 is currently broken due to libgit2 changes, please use v0.1.1 instead.
-
 ## Features
 - Uses [libgit2](https://libgit2.org/) internally
 - The patcher creates a single patch file per commit

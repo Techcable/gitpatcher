@@ -34,7 +34,4 @@ slog-term = "2.9"
 
 [build-dependencies]
 # Already using libgit2 for engine, might as well use for versions
-#
-# TODO: Switch back to git2.
-# Right now can't use it because of version conflict
-vergen = { version = "8.2", features = ["git", "gitcl"] }
+vergen = { version = "8.2.5", features = ["git", "git2"] }

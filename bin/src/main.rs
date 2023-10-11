@@ -1,15 +1,14 @@
 use std::env;
-use std::ffi::OsStr;
 use std::path::PathBuf;
 
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use camino::Utf8PathBuf;
 use clap::{Parser, Subcommand};
-use git2::build::CheckoutBuilder;
-use git2::{ObjectType, Repository, ResetType};
+use git2::{ObjectType, Repository};
+use gitpatcher::apply_patches::bulk::BulkPatchApply;
 use gitpatcher::apply_patches::EmailMessage;
 use gitpatcher::regenerate_patches::PatchFileSet;
-use slog::{o, Drain, Logger};
+use slog::{Drain, Logger};
 
 #[derive(Parser, Debug)]
 #[clap(name = "gitpatcher", about = "A patching system based on git", version = env!("VERGEN_GIT_DESCRIBE"))]
@@ -61,66 +60,37 @@ struct RegeneratePatchOpts {
 
 fn main() -> anyhow::Result<()> {
     let opt: GitPatcher = GitPatcher::parse();
+    let plain = slog_term::PlainSyncDecorator::new(std::io::stdout());
+    let logger = Logger::root(
+        std::sync::Mutex::new(slog_term::CompactFormat::new(plain).build()).fuse(),
+        slog::o!(),
+    );
     match opt.subcommand {
         PatchSubcommand::ApplyPatch(opts) => apply_patch(opts),
-        PatchSubcommand::RegeneratePatches(opts) => regenerate_patches(opts),
-        PatchSubcommand::ApplyAllPatches(opts) => apply_all_patches(opts),
+        PatchSubcommand::RegeneratePatches(opts) => regenerate_patches(logger, opts),
+        PatchSubcommand::ApplyAllPatches(opts) => apply_all_patches(logger, opts),
     }
 }
 
-fn apply_all_patches(opts: ApplyAllPatches) -> anyhow::Result<()> {
+fn apply_all_patches(logger: Logger, opts: ApplyAllPatches) -> anyhow::Result<()> {
     let target = Repository::open(&opts.target_repo).with_context(|| {
         format!(
             "Unable to access target repo: {}",
             opts.target_repo.display()
         )
     })?;
+    let bulk_apply = BulkPatchApply::new(&logger, &target, opts.patch_dir);
     if let Some(ref upstream) = opts.upstream {
-        let obj = target
-            .resolve_reference_from_short_name(upstream)
-            .and_then(|reference| reference.peel(ObjectType::Any))
-            .with_context(|| format!("Unable to resolve {upstream:?}"))?;
-        let mut checkout = CheckoutBuilder::new();
-        checkout.remove_untracked(true);
-        target
-            .reset(&obj, ResetType::Hard, Some(&mut checkout))
-            .with_context(|| format!("Unable to reset to {upstream:?}"))?;
-        println!("Reset {} to {}", opts.target_repo.display(), upstream);
-    }
-    let entries = std::fs::read_dir(&opts.patch_dir)
-        .with_context(|| format!("Error accessing patch dir {}", opts.patch_dir.display()))?;
-    let mut patch_files = Vec::new();
-    for entry in entries {
-        let entry = entry
-            .with_context(|| format!("Error accessing patch dir {}", opts.patch_dir.display()))?;
-        // Skip all patch files that do not end with '.patch'
-        let full_path = entry.path();
-        if full_path.extension() != Some(OsStr::new("patch")) {
-            continue;
-        }
-        let raw_name = entry.file_name();
-        let s = raw_name.to_str().ok_or_else(|| {
-            anyhow!(
-                "Invalid patch file name must be UTF8: {:?}",
-                entry.file_name()
+        bulk_apply.reset_upstream(upstream).with_context(|| {
+            format!(
+                "Failed to reset {} to upstream {upstream:?}",
+                opts.target_repo.display()
             )
         })?;
-        assert!(s.ends_with(".patch"));
-        let patch_name = &s[..(s.len() - ".patch".len())];
-        let message_str = std::fs::read_to_string(&full_path)
-            .with_context(|| format!("Unable to read patch file {s}"))?;
-        let email =
-            EmailMessage::parse(&message_str).with_context(|| format!("Invalid patch file {s}"))?;
-        patch_files.push((String::from(patch_name), email));
     }
-    patch_files.sort_by(|(first, _), (second, _)| first.cmp(second));
-    for (name, email) in &patch_files {
-        println!("Applying {}.patch", name);
-        email
-            .apply_commit(&target)
-            .with_context(|| format!("Failed to apply patch: {name:?}"))?;
-    }
-    println!("Successfully applied {} patches!", patch_files.len());
+    bulk_apply
+        .apply_all()
+        .context("Failed to bulk_apply patches")?;
     Ok(())
 }
 
@@ -140,7 +110,7 @@ fn apply_patch(opts: ApplyPatchOpts) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn regenerate_patches(opts: RegeneratePatchOpts) -> anyhow::Result<()> {
+fn regenerate_patches(logger: Logger, opts: RegeneratePatchOpts) -> anyhow::Result<()> {
     let patched_repo = Repository::open(&opts.patched_repo).with_context(|| {
         format!(
             "Unable to access patched repo: {}",
@@ -158,17 +128,14 @@ fn regenerate_patches(opts: RegeneratePatchOpts) -> anyhow::Result<()> {
     let upstream_commit = upstream_obj.as_commit().with_context(|| {
         format!("Upstream ref must be either a tree or a commit: {upstream_obj:?}")
     })?;
-    let plain = slog_term::PlainSyncDecorator::new(std::io::stdout());
     ::gitpatcher::regenerate_patches::regenerate_patches(
         upstream_commit,
         &mut patches,
         &patched_repo,
-        Logger::root(
-            std::sync::Mutex::new(slog_term::CompactFormat::new(plain).build()).fuse(),
-            o!(),
-        ),
+        logger.clone(),
         Default::default(),
-    )?;
+    )
+    .context("Failed to regenerate patches")?;
     println!("Success!");
     Ok(())
 }

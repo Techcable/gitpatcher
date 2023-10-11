@@ -125,3 +125,36 @@ where
 #[derive(Debug, thiserror::Error)]
 #[error("Unexpected EOF")]
 pub struct UnexpectedEof;
+
+/// Utilities for logging
+pub mod log {
+    use std::path::{Path, PathBuf};
+
+    /// Wrapper for [PathBuf] that implements [slog::Value]
+    #[derive(Debug, Clone)]
+    pub struct LogPathValue(pub PathBuf);
+    impl From<PathBuf> for LogPathValue {
+        #[inline]
+        fn from(value: PathBuf) -> Self {
+            LogPathValue(value)
+        }
+    }
+
+    impl<'a> From<&'a Path> for LogPathValue {
+        #[inline]
+        fn from(value: &'a Path) -> Self {
+            LogPathValue(value.to_path_buf())
+        }
+    }
+
+    impl slog::Value for LogPathValue {
+        fn serialize(
+            &self,
+            record: &slog::Record,
+            key: slog::Key,
+            serializer: &mut dyn slog::Serializer,
+        ) -> slog::Result {
+            slog::Value::serialize(&self.0.display(), record, key, serializer)
+        }
+    }
+}

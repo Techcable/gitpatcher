@@ -26,9 +26,6 @@ diffy = "0.4"
 # Requires nightly feature `error_generic_member_access`
 backtrace = []
 
-[build-dependencies]
-rustversion = "1"
-
 [dev-dependencies]
 anyhow = "1"
 testdir = "0.9"

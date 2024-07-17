@@ -20,6 +20,12 @@ camino.workspace = true
 # Used to apply patches
 diffy = "0.3"
 
+[features]
+# Add backtraces to error types
+#
+# Requires nightly feature `error_generic_member_access`
+backtrace = []
+
 [build-dependencies]
 rustversion = "1"
 

@@ -97,30 +97,6 @@ impl<T: Clone, const LIMIT: usize> RememberLast<T, LIMIT> {
         self.last.len()
     }
 }
-pub struct IterRememberLast<I: Iterator, const LIMIT: usize>
-where
-    I::Item: Clone,
-{
-    remember: RememberLast<I::Item, LIMIT>,
-    iter: I,
-}
-impl<I: Iterator, const LIMIT: usize> IterRememberLast<I, LIMIT> where I::Item: Clone {}
-impl<I: Iterator, const LIMIT: usize> Iterator for IterRememberLast<I, LIMIT>
-where
-    I::Item: Clone,
-{
-    type Item = I::Item;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(element) = self.iter.next() {
-            self.remember.remember(&element);
-            Some(element)
-        } else {
-            None
-        }
-    }
-}
 
 #[derive(Debug, thiserror::Error)]
 #[error("Unexpected EOF")]

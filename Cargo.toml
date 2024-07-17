@@ -18,7 +18,7 @@ slog.workspace = true
 git2.workspace = true
 camino.workspace = true
 # Used to apply patches
-diffy = "0.3"
+diffy = "0.4"
 
 [features]
 # Add backtraces to error types

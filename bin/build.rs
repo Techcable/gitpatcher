@@ -1,11 +1,14 @@
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
-    vergen::EmitBuilder::builder()
-        // Used to give CLI version
-        .git_describe(
-            /* dirty */ true,
-            /* tags */ true,
-            /* match */ Some(r"v*"),
-        )
+    vergen_git2::Emitter::new()
+        .add_instructions(
+            &vergen_git2::Git2Builder::default()
+                .describe(
+                    /* tags */ true,
+                    /* dirty */ true,
+                    /* match */ Some(r"v*"),
+                )
+                .build()?,
+        )?
         .emit()?;
     Ok(())
 }

@@ -1,0 +1,20 @@
+[package]
+name = "test-paper-patch"
+description = "Internal tests against the PaperMC patches"
+edition.workspace = true
+version = "0.1.0" # permenant alpha
+# for testing only
+publish = false
+
+[[bin]]
+name = "paper-patch-test"
+path = "src/main.rs"
+
+[dependencies]
+gitpatcher = { version = "0.2.0", path = "../.." }
+anyhow = "1"
+slog.workspace = true
+duct = "1"
+clap = { version = "4.5", features = ["derive"] }
+slog-term = "2"
+git2.workspace = true

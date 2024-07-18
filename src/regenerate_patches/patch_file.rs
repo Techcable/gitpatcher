@@ -319,8 +319,20 @@ pub enum PatchError {
         cause: git2::Error,
     },
     /// An unexpected error occurred using git
-    #[error("Unexpected git error: {0}")]
-    Git(#[from] git2::Error),
-    #[error("Unexpected IO error: {0}")]
-    Io(#[from] std::io::Error),
+    #[error("Unexpected git error")]
+    Git {
+        #[from]
+        cause: git2::Error,
+        #[cfg(feature = "backtrace")]
+        #[cfg_attr(feature = "backtrace", backtrace)]
+        backtrace: std::backtrace::Backtrace,
+    },
+    #[error("Unexpected IO error")]
+    Io {
+        #[from]
+        cause: std::io::Error,
+        #[cfg(feature = "backtrace")]
+        #[cfg_attr(feature = "backtrace", backtrace)]
+        backtrace: std::backtrace::Backtrace,
+    },
 }

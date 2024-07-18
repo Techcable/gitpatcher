@@ -29,6 +29,7 @@ pub struct PatchFormatter<'repo> {
     logger: Logger,
     base: Commit<'repo>,
     last_commit: Commit<'repo>,
+    /// The *resolved* path to the patch directory.
     out_dir: Utf8PathBuf,
     opts: FormatOptions,
     target: &'repo Repository,
@@ -179,7 +180,7 @@ pub enum PatchFormatError {
         #[source]
         cause: InvalidCommitMessage,
     },
-    #[error("Error writing to {patch_file}: {cause}")]
+    #[error("Error writing to {patch_file}")]
     PatchWriteError {
         patch_file: Utf8PathBuf,
         #[source]

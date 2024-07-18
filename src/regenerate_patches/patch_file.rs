@@ -19,24 +19,51 @@ use crate::format_patches::{FormatOptions, PatchFormatError, PatchFormatter};
 use crate::utils::RememberLast;
 
 pub struct PatchFileSet<'a> {
+    /// The repository that contains the patch files.
+    ///
+    /// This is *not* the repository where
+    /// the patches are computed from/against.
     root_repo: &'a Repository,
-    patch_dir: Utf8PathBuf,
+    /// The directory containing patches,
+    /// relative to the root repository.
+    relative_patch_dir: Utf8PathBuf,
     patches: Vec<PatchFile>,
 }
 impl<'a> PatchFileSet<'a> {
-    pub fn load(target: &'a Repository, patch_dir: &Utf8Path) -> Result<Self, PatchError> {
-        assert!(patch_dir.is_relative());
+    fn repo_workdir(&self) -> Result<Utf8PathBuf, PatchError> {
+        Ok(Utf8PathBuf::try_from(
+            self.root_repo
+                .workdir()
+                .ok_or(PatchError::BareRepoError)?
+                .to_owned(),
+        )?)
+    }
+
+    pub fn load(target: &'a Repository, relative_patch_dir: &Utf8Path) -> Result<Self, PatchError> {
+        if !relative_patch_dir.is_relative() {
+            return Err(PatchError::AbsolutePatchDir {
+                patch_dir: relative_patch_dir.into(),
+            });
+        }
         let mut set = PatchFileSet {
             root_repo: target,
             patches: Vec::new(),
-            patch_dir: patch_dir.into(),
+            relative_patch_dir: relative_patch_dir.into(),
         };
         set.reload_files()?;
         Ok(set)
     }
     pub fn reload_files(&mut self) -> Result<(), PatchError> {
         self.patches.clear();
-        for entry in std::fs::read_dir(&self.patch_dir)? {
+        let workdir = self.repo_workdir()?;
+        let patch_dir = workdir.join(&self.relative_patch_dir);
+        for entry in
+            std::fs::read_dir(&patch_dir).map_err(|cause| PatchError::ScanPatchDirFailed {
+                patch_dir: self.relative_patch_dir.clone(),
+                workdir: workdir.clone(),
+                cause,
+            })?
+        {
             let entry = entry?;
             let file_name = match entry.file_name().to_str() {
                 Some(file_name) => file_name.to_string(),
@@ -47,7 +74,7 @@ impl<'a> PatchFileSet<'a> {
                 continue;
             }
             self.patches
-                .push(PatchFile::parse(&self.patch_dir, &file_name)?);
+                .push(PatchFile::parse(&self.relative_patch_dir, &file_name)?);
         }
         self.patches.sort_by_key(|patch| patch.index);
         Ok(())
@@ -61,8 +88,11 @@ impl<'a> PatchFileSet<'a> {
     /// As long as you keep your changes saved in that repo, you'll be fine.
     pub fn stage_changes(&mut self) -> Result<(), git2::Error> {
         let mut index = self.root_repo.index()?;
+        // TODO: Handle error "directory not found" specially
+        //
+        // This is possible if the patch dir is not actually tracked in the index.
         index.add_all(
-            [self.patch_dir.as_std_path()],
+            [self.relative_patch_dir.as_std_path()],
             git2::IndexAddOption::DEFAULT,
             None,
         )?;
@@ -111,7 +141,11 @@ pub fn regenerate_patches(
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or_else(|| panic!("Invalid path for target repo: {}", target.path().display()));
-    info!(logger, "Formatting patches for {}", patch_set.patch_dir);
+    info!(
+        logger,
+        "Formatting patches for {}", patch_set.relative_patch_dir
+    );
+    let workdir = patch_set.repo_workdir()?;
     // Remove old patches
     match target.state() {
         RepositoryState::Rebase | RepositoryState::RebaseInteractive => {
@@ -120,12 +154,13 @@ pub fn regenerate_patches(
             let mut rebase = patch_set.root_repo.open_rebase(None)?;
             let next = rebase.operation_current().unwrap_or(0);
             for patch in &patch_set.patches[..next] {
-                std::fs::remove_file(&patch.path)?;
+                println!("{}", patch.path);
+                std::fs::remove_file(workdir.join(&patch.path))?;
             }
         }
         RepositoryState::Clean => {
             for patch in &patch_set.patches {
-                std::fs::remove_file(&patch.path)?;
+                std::fs::remove_file(workdir.join(&patch.path))?;
             }
         }
         state => {
@@ -137,7 +172,7 @@ pub fn regenerate_patches(
     {
         PatchFormatter::new(
             logger.clone(),
-            patch_set.patch_dir.clone(),
+            workdir.join(patch_set.relative_patch_dir.clone()),
             target,
             base.clone(),
             options.format_opts,
@@ -152,7 +187,7 @@ pub fn regenerate_patches(
     {
         let head_tree = patch_set.root_repo.head()?.peel_to_tree()?;
         let mut filtered_tree = None;
-        let mut parents = patch_set.patch_dir.ancestors().collect::<Vec<_>>();
+        let mut parents = patch_set.relative_patch_dir.ancestors().collect::<Vec<_>>();
         let len = parents.len();
         parents.truncate(len - 1); // Trim last (empty)
         for path in parents {
@@ -202,7 +237,7 @@ pub fn regenerate_patches(
         let mut num_trivial = 0;
         for patch in &patch_set.patches {
             let git_version = {
-                let mut reader = BufReader::new(File::open(&patch.path)?);
+                let mut reader = BufReader::new(File::open(workdir.join(&patch.path))?);
                 let mut remember = RememberLast::<_, 2>::new();
                 let mut buffer = String::new();
                 while reader.read_line(&mut buffer)? != 0 {
@@ -308,15 +343,20 @@ pub enum PatchError {
     /// The patched repo was in an invalid [RepositoryState]
     #[error("Target repo is in unexpected state: {state:?}")]
     PatchedRepoInvalidState { state: RepositoryState },
+    #[error("Repository cannot be bare")]
+    BareRepoError,
     #[error("Invalid name for patch: {name:?}")]
     InvalidPatchName { name: String },
     #[error("Failed to format patches: {0}")]
     PatchFormatFailed(#[from] PatchFormatError),
-    #[error("Missing patch dir {}: {cause}", patch_dir)]
-    MissingPatchDir {
+    #[error("Patch directory must be relative path: {patch_dir} (resolved against repo)")]
+    AbsolutePatchDir { patch_dir: Utf8PathBuf },
+    #[error("Unable to scan patch directory {patch_dir} in repo workdir {workdir}")]
+    ScanPatchDirFailed {
         patch_dir: Utf8PathBuf,
+        workdir: Utf8PathBuf,
         #[source]
-        cause: git2::Error,
+        cause: std::io::Error,
     },
     /// An unexpected error occurred using git
     #[error("Unexpected git error")]
@@ -335,4 +375,6 @@ pub enum PatchError {
         #[cfg_attr(feature = "backtrace", backtrace)]
         backtrace: std::backtrace::Backtrace,
     },
+    #[error("Encountered non-UTF8 path")]
+    NotUtf8PathBuf(#[from] camino::FromPathBufError),
 }

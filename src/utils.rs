@@ -82,16 +82,32 @@ impl<T: Clone, const LIMIT: usize> RememberLast<T, LIMIT> {
             Clone::clone_from(self.last.last_mut().unwrap(), element);
         }
     }
+
     #[inline]
+    #[track_caller]
     pub fn back(&self, offset: usize) -> &T {
-        &self.last[self.last.len() - offset - 1]
+        match self.get_back(offset) {
+            Some(val) => val,
+            None => panic!(
+                "Can't look back {offset} elements, only have {len}",
+                len = self.last.len()
+            ),
+        }
     }
+
+    #[inline]
+    pub fn get_back(&self, offset: usize) -> Option<&T> {
+        self.last
+            .get(self.last.len().checked_sub(offset)?.checked_sub(1)?)
+    }
+
     /// The last elements we remember,
     /// from oldest to newest
     #[inline]
     pub fn as_slice(&self) -> &[T] {
         &self.last
     }
+
     #[inline]
     pub fn len(&self) -> usize {
         self.last.len()

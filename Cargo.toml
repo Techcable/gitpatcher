@@ -31,8 +31,7 @@ anyhow = "1"
 testdir = "0.9"
 
 [workspace]
-members = ["bin"]
-default-members = [".", "bin"]
+members = ["crates/*"]
 
 [workspace.package]
 version = "0.2.3"

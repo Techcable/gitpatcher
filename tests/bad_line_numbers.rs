@@ -28,7 +28,7 @@ pub fn approx_pi_patch() -> anyhow::Result<()> {
     let approx_pi_repo_file = repo_workdir.join(approx_pi_file.file_name().unwrap());
     std::fs::copy(&approx_pi_file, &approx_pi_repo_file)?;
     repo.index()?
-        .add_path(&approx_pi_repo_file.strip_prefix(repo_workdir)?)?;
+        .add_path(approx_pi_repo_file.strip_prefix(repo_workdir)?)?;
     let tree_id = repo.index()?.write_tree()?;
     let tree = repo.find_tree(tree_id)?;
     let sig = git2::Signature::now("dummy", "dummy@dumb.gov")?;

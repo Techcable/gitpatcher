@@ -54,9 +54,19 @@ def run_format(ctx, check=False):
     # need python format for invoke.py
     ctx.run("ruff format" + maybe_check)
     ctx.run("ruff check --select=I" + maybe_fix)  # works like isort
+    check_spelling(ctx, fix=False)
 
 
-ns = Collection(test, check, clippy, run_format)
+TYPOS_VER = "1.45"  # pinned to avoid update breakage
+
+
+@task(name="typos")
+def check_spelling(ctx, fix=False):
+    maybe_write = " --write-changes" if fix else ""
+    ctx.run(f"uvx typos@{TYPOS_VER}" + maybe_write)
+
+
+ns = Collection(test, check, clippy, run_format, check_spelling)
 ns.configure(
     {
         "run": {

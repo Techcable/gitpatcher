@@ -41,7 +41,7 @@ impl<'a> CommitMessage<'a> {
             + summary_end;
         // Strip trailing whitespace
         let body_end = match potential_body.rfind(|c: char| !c.is_whitespace()) {
-            Some(non_ws_idx) => non_ws_idx + 1, // becasue this is exclusive, we need to offset by 1
+            Some(non_ws_idx) => non_ws_idx + 1, // because this is exclusive, we need to offset by 1
             None => potential_body.len(),
         } + summary_end;
         Ok(CommitMessage {

@@ -192,7 +192,7 @@ pub enum BulkApplyError {
 
 /// An error that occurs in [BulkPatchApply::reset_upstream].
 ///
-/// This is seperated from the main error type,
+/// This is separated from the main error type,
 /// because resetting to the upstream reference is optional
 /// and logically a separate operation.
 #[derive(thiserror::Error, Debug)]

@@ -1,7 +1,7 @@
 //! Tests for patches with bad line numbers.
 //!
 //! Tests that both applying patches can succeed anyways (based on the context)
-//! and that regenerating the patches doesn't generate unecessary changes.
+//! and that regenerating the patches doesn't generate unnecessary changes.
 use std::env;
 use std::path::{Path, PathBuf};
 

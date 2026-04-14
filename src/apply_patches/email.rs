@@ -308,7 +308,7 @@ impl EmailMessage {
             self.date.offset().whole_minutes() as i32,
         );
         let author = Signature::new(&self.author_name, &self.author_email, &time)?;
-        // TODO: Handle detatched head/no commits
+        // TODO: Handle detached head/no commits
         let head_commit = target.head()?.peel_to_commit()?;
         let parents = vec![&head_commit];
         let message = self.full_message();

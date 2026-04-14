@@ -2,7 +2,7 @@
 name = "gitpatcher"
 description = """A library that uses git to maintain a set of patches around a submodule"""
 version.workspace = true
-edition.workspace =  true
+edition.workspace = true
 authors.workspace = true
 readme.workspace = true
 license.workspace = true

@@ -47,6 +47,10 @@ def run_format(ctx, check=False):
     maybe_check = " --check" if check else ""
     maybe_fix = " --fix" if not check else ""
     ctx.run("cargo +nightly fmt --all" + maybe_check)
+    ctx.run("taplo format" + maybe_check)
+    # cargo-sort is currently disabled as it causes excessive rebase conflicts
+    # ctx.run("cargo sort --grouped --no-format --workspace" + maybe_check)a
+
     # need python format for invoke.py
     ctx.run("ruff format" + maybe_check)
     ctx.run("ruff check --select=I" + maybe_fix)  # works like isort

@@ -62,3 +62,9 @@ lto = "thin"
 # As far as we're concerned a panic is fatal,
 # and should exit the command line app.
 panic = "abort"
+
+[package.metadata.cargo-shear]
+ignored-paths = [
+    # not actually project code
+    "tests/data/**",
+]

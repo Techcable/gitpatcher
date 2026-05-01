@@ -30,6 +30,7 @@ def test(ctx):
 @task
 def check(ctx, format=True):
     clippy(ctx)
+    ctx.run("cargo shear")
     # by default, check formatting as well
     if format:
         run_format(ctx, check=True)

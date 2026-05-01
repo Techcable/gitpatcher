@@ -27,7 +27,7 @@ slog.workspace = true
 camino.workspace = true
 clap = { version = "4.3", features = ["derive"] }
 git2.workspace = true
-# Confiured to maybe be static
+# Used only to force static linking with libgit2
 libz-sys = { version = "1" }
 # Log backend
 slog-term = "2.9"
@@ -35,3 +35,9 @@ slog-term = "2.9"
 [build-dependencies]
 # Already using libgit2 for engine, might as well use for versions
 vergen-git2 = "1"
+
+[package.metadata.cargo-shear]
+ignored = [
+    # Used only to force static linking
+    "libz-sys",
+]

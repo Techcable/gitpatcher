@@ -51,7 +51,7 @@ impl<'a> CommitMessage<'a> {
         })
     }
     pub fn from_commit(commit: &'a Commit) -> Result<Self, InvalidCommitMessage> {
-        Self::parse(commit.message().ok_or(InvalidCommitMessage::InvalidUtf8)?)
+        Self::parse(commit.message()?)
     }
 
     pub fn patch_file_name(&self, patch_no: u32) -> String {
@@ -83,8 +83,8 @@ impl<'a> CommitMessage<'a> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum InvalidCommitMessage {
-    #[error("Invalid UTF8 in commit message")]
-    InvalidUtf8,
+    #[error("Unable to resolve commit message")]
+    Git2(#[from] git2::Error),
     /// Indicates that a message was completely empty (zero-length)
     #[error("Empty commit message")]
     EmptyMessage,

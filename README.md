@@ -11,7 +11,13 @@ of patch files against a submodule.
     to avoid committing unnecessary changes
 
 ## See also
-- [Arch Build System Patching](https://wiki.archlinux.org/index.php/Patching_packages) 
+- [Arch Build System Patching](https://wiki.archlinux.org/index.php/Patching_packages)
 - [Paper](https://github.com/PaperMC/Paper) patching system
   - [rebuildPatches.sh](https://github.com/PaperMC/Paper/blob/96f8b1a/scripts/rebuildPatches.sh)
   - [applyPatches.sh](https://github.com/PaperMC/Paper/blob/668ad2c/scripts/applyPatches.sh)
+
+## License
+Licensed under either the [Apache 2.0 License](./LICENSE-APACHE.txt) or [MIT License](./LICENSE-MIT.txt) at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in this project by you,
+as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.

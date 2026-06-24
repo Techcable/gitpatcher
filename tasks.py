@@ -41,6 +41,7 @@ def check(ctx, format=True):
     ctx.run("cargo +nightly doc --document-private-items --no-deps -p gitpatcher-bin --all-features")
     ctx.run("cargo shear")
     ctx.run("cargo deny check")
+    cargo_reedme(ctx, check=True)
     # by default, check formatting as well
     if format:
         run_format(ctx, check=True)

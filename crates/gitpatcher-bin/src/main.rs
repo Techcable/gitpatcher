@@ -1,127 +1,147 @@
 use std::env;
 use std::path::PathBuf;
 
-use anyhow::Context;
+use anyhow::{Context, anyhow};
 use camino::Utf8PathBuf;
-use clap::{Parser, Subcommand};
-use git2::{ObjectType, Repository};
-use gitpatcher::apply_patches::EmailMessage;
-use gitpatcher::apply_patches::bulk::BulkPatchApply;
-use gitpatcher::regenerate_patches::PatchFileSet;
+use clap::{Args, Parser, Subcommand};
+use gitpatcher::engine::{ApplyPatchesOptions, PatchEngine, TargetRepo};
+use gitpatcher::vcs::VcsRepo;
 use slog::{Drain, Logger};
+
+/// Default paths to primary config.
+///
+/// Keep in sync with [`GitPatcher::primary_config_path`] docs.
+const PRIMARY_CONFIG_DEFAULT_PATHS: &[&str] = &["gitpatcher.toml", ".config/gitpatcher.toml"];
 
 #[derive(Parser, Debug)]
 #[clap(name = "gitpatcher", about = "A patching system based on git", version = env!("VERGEN_GIT_DESCRIBE"))]
 struct GitPatcher {
+    /// The root repository, used to infer configuration and commit regenerated patches.
+    ///
+    /// A subdirectory of the repository root can be specified,
+    /// and the root will be automatically detected from there.
+    /// By default, this is determined using the current working directory.
+    ///
+    /// This option mirrors the behavior of git's `-C` option.
+    #[clap(long = "root-repo", alias = "root", short = 'C')]
+    root_repo_path: Option<PathBuf>,
+    /// The primary repo configuration file.
+    ///
+    /// If not specified, the following default locations will be searched
+    /// (resolved relative to the `--root-repo` path)
+    /// - `gitpatcher.toml`
+    /// - `.config/gitpatcher.toml`
+    #[clap(long = "primary-config", alias = "config")]
+    primary_config_path: Option<PathBuf>,
     #[clap(subcommand)]
     subcommand: PatchSubcommand,
 }
 #[derive(Subcommand, Debug)]
 enum PatchSubcommand {
-    /// Apply a single patch file to the current repository
-    ApplyPatch(ApplyPatchOpts),
-    /// Apply an entire set of patch files to the specified repository
-    ApplyAllPatches(ApplyAllPatches),
-    /// Regenerate a set of patched files by comparing a patched repo to an upstream reference
-    RegeneratePatches(RegeneratePatchOpts),
+    /// Apply configured patches.
+    Apply(ApplyOpts),
 }
 
-#[derive(Parser, Debug)]
-struct ApplyPatchOpts {
-    /// The patch file to apply
-    patch_file: PathBuf,
-    /// The target repository to apply patches too
+#[derive(Args, Debug)]
+struct CommonOpts {
+    /// The target repository names.
     ///
-    /// Defaults to current directory if nothing is specified
+    /// If no targets are specified,
+    /// all repos will be used.
     #[clap(long = "target")]
-    target_repo: Option<PathBuf>,
+    target_repos: Option<Vec<String>>,
+}
+impl CommonOpts {
+    fn resolve_targets<'a>(&self, ctx: &'a CmdContext) -> anyhow::Result<Vec<TargetRepo<'a>>> {
+        if let Some(ref target_repos) = self.target_repos {
+            assert!(!target_repos.is_empty(), "names should be either `None` or nonempty");
+            target_repos
+                .iter()
+                .map(|name| ctx.engine.target_repo(name))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(anyhow::Error::from)
+        } else {
+            Ok(ctx
+                .engine
+                .primary_config()
+                .repos
+                .keys()
+                .map(|name| ctx.engine.target_repo(name).expect("name listed in config"))
+                .collect())
+        }
+    }
 }
 
 #[derive(Parser, Debug)]
-struct ApplyAllPatches {
-    /// The upstream reference to reset to before applying patches
+struct ApplyOpts {
+    #[clap(flatten)]
+    common: CommonOpts,
+    /// Initialize repositories if not already setup.
     #[clap(long)]
-    upstream: Option<String>,
-    /// The target repository to apply patches too
-    target_repo: PathBuf,
-    /// The directory containing all the patch files
-    patch_dir: PathBuf,
+    init: bool,
+    /// Forcibly override unstaged changes in the working directory.
+    #[clap(long)]
+    force: bool,
 }
 
-#[derive(Parser, Debug)]
-struct RegeneratePatchOpts {
-    /// The repository containing the patched changes
-    patched_repo: PathBuf,
-    /// A upstream git reference to compare the patched repo against
-    upstream: String,
-    /// The directory to place the generated patches in
-    patch_dir: Utf8PathBuf,
+struct CmdContext<'a> {
+    _root_logger: Logger,
+    _cli: &'a GitPatcher,
+    _root_repo_path: Utf8PathBuf,
+    engine: PatchEngine,
+}
+impl<'a> CmdContext<'a> {
+    fn setup(root_logger: &Logger, cli: &'a GitPatcher) -> anyhow::Result<Self> {
+        let cwd = std::env::current_dir().context("Failed to determine CWD")?;
+        let root_repo_path = cli.root_repo_path.clone().unwrap_or(cwd);
+        let root_repo =
+            VcsRepo::detect(&root_repo_path).with_context(|| format!("Failed to detect repo at {root_repo_path:?}"))?;
+        let root_repo_path = root_repo.workdir().to_owned();
+        let primary_config_path = match cli.primary_config_path {
+            Some(ref explicit) => explicit.clone(),
+            None => PRIMARY_CONFIG_DEFAULT_PATHS
+                .iter()
+                .map(|&relative_path| root_repo_path.join(relative_path))
+                .find(|x| x.exists())
+                .ok_or_else(|| anyhow!("Unable to detect gitpatcher config at {root_repo_path:?}"))?
+                .into_std_path_buf(),
+        };
+        let engine = PatchEngine::builder(root_logger, root_repo)
+            .primary_config_path(&primary_config_path)
+            .init()?;
+        Ok(CmdContext {
+            _root_repo_path: root_repo_path,
+            _root_logger: root_logger.clone(),
+            _cli: cli,
+            engine,
+        })
+    }
 }
 
 fn main() -> anyhow::Result<()> {
-    let opt: GitPatcher = GitPatcher::parse();
-    let plain = slog_term::PlainSyncDecorator::new(std::io::stdout());
-    let logger = Logger::root(
-        std::sync::Mutex::new(slog_term::CompactFormat::new(plain).build()).fuse(),
+    let cli: GitPatcher = GitPatcher::parse();
+    let mut decorator = slog_term::TermDecorator::new();
+    if env::var_os("FORCE_COLOR").is_some_and(|x| !x.is_empty()) {
+        decorator = decorator.force_color();
+    }
+    let root_logger = Logger::root(
+        std::sync::Mutex::new(slog_term::CompactFormat::new(decorator.build()).build()).fuse(),
         slog::o!(),
     );
-    match opt.subcommand {
-        PatchSubcommand::ApplyPatch(opts) => apply_patch(opts),
-        PatchSubcommand::RegeneratePatches(opts) => regenerate_patches(logger, opts),
-        PatchSubcommand::ApplyAllPatches(opts) => apply_all_patches(logger, opts),
+    let _guard = slog_scope::set_global_logger(root_logger.clone());
+    let ctx = CmdContext::setup(&root_logger, &cli)?;
+    match &cli.subcommand {
+        PatchSubcommand::Apply(opts) => apply_patch(&ctx, opts),
     }
 }
 
-fn apply_all_patches(logger: Logger, opts: ApplyAllPatches) -> anyhow::Result<()> {
-    let target = Repository::open(&opts.target_repo)
-        .with_context(|| format!("Unable to access target repo: {}", opts.target_repo.display()))?;
-    let bulk_apply = BulkPatchApply::new(&logger, &target, opts.patch_dir);
-    if let Some(ref upstream) = opts.upstream {
-        bulk_apply.reset_upstream(upstream).with_context(|| {
-            format!(
-                "Failed to reset {} to upstream {upstream:?}",
-                opts.target_repo.display()
-            )
-        })?;
+fn apply_patch(ctx: &CmdContext, opts: &ApplyOpts) -> anyhow::Result<()> {
+    let targets = opts.common.resolve_targets(ctx)?;
+    for target in targets {
+        let opts = ApplyPatchesOptions::builder().init(opts.init).force(opts.force).build();
+        target
+            .apply_patches(&opts)
+            .with_context(|| format!("Failed to apply patches to {}", target.name()))?;
     }
-    bulk_apply.apply_all().context("Failed to bulk_apply patches")?;
-    Ok(())
-}
-
-fn apply_patch(opts: ApplyPatchOpts) -> anyhow::Result<()> {
-    let target_repo = match opts.target_repo {
-        Some(location) => location,
-        None => env::current_dir().context("Unable to detect current dir")?,
-    };
-    let target_repo = Repository::open(&target_repo)
-        .with_context(|| format!("Unable to access target repo {}", target_repo.display(),))?;
-    let message = std::fs::read_to_string(&opts.patch_file).context("Unable to read patch")?;
-    let message = EmailMessage::parse(&message).context("Error parsing patch")?;
-    message.apply_commit(&target_repo).context("Unable to apply patch")?;
-    println!("Applied: {}", opts.patch_file.display());
-    Ok(())
-}
-
-fn regenerate_patches(logger: Logger, opts: RegeneratePatchOpts) -> anyhow::Result<()> {
-    let patched_repo = Repository::open(&opts.patched_repo)
-        .with_context(|| format!("Unable to access patched repo: {}", opts.patched_repo.display()))?;
-    let upstream_obj = patched_repo
-        .resolve_reference_from_short_name(&opts.upstream)
-        .and_then(|reference| reference.peel(ObjectType::Any))
-        .with_context(|| format!("Unable to resolve upstream ref {:?}", opts.upstream))?;
-    let base_repo = Repository::discover(&opts.patch_dir).context("Unable to discover repo for patch dir")?;
-    let mut patches = PatchFileSet::load(&base_repo, &opts.patch_dir).context("Unable to load patches")?;
-    let upstream_commit = upstream_obj
-        .as_commit()
-        .with_context(|| format!("Upstream ref must be either a tree or a commit: {upstream_obj:?}"))?;
-    ::gitpatcher::regenerate_patches::regenerate_patches(
-        upstream_commit,
-        &mut patches,
-        &patched_repo,
-        logger.clone(),
-        Default::default(),
-    )
-    .context("Failed to regenerate patches")?;
-    println!("Success!");
     Ok(())
 }

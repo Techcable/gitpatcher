@@ -1,21 +1,14 @@
-//! A rust library that uses git to maintain a set
-//! of patch files against a submodule.
-//!
-//! # Features
-//! - Uses [libgit2](https://libgit2.org/) internally
-//! - The patcher creates a single patch file per commit
-//! - It automatically adds patch files to the parent repository
-//!   - Internally filters out redundant changes in patches,
-//!     to avoid committing unnecessary changes
+//! A rust library that uses git to maintain a set of patch files against a repo.
 //!
 //! # See also
 //! - [Arch Build System Patching](https://wiki.archlinux.org/index.php/Patching_packages)
-//! - [Paper](https://github.com/PaperMC/Paper) patching system
-//!   - [rebuildPatches.sh](https://github.com/PaperMC/Paper/blob/96f8b1a/scripts/rebuildPatches.sh)
-//!   - [applyPatches.sh](https://github.com/PaperMC/Paper/blob/668ad2c/scripts/applyPatches.sh)
-
+//! - The [Paper](https://github.com/PaperMC/Paper) patching system
+//!   - See [paperweight](https://github.com/PaperMC/paperweight) gradle plugin
+//!   - [old `rebuildPatches.sh`](https://github.com/PaperMC/Paper-archive/blob/96f8b1a/scripts/rebuildPatches.sh)
+//!   - [old `applyPatches.sh`](https://github.com/PaperMC/Paper-archive/blob/668ad2c/scripts/applyPatches.sh)
 #![cfg_attr(use_error_backtrace, feature(error_generic_member_access))]
-pub mod apply_patches;
-pub mod format_patches;
-pub mod regenerate_patches;
-mod utils;
+
+pub mod config;
+pub mod engine;
+pub(crate) mod utils;
+pub mod vcs;

@@ -1,0 +1,6 @@
+enforced-import-renames = [
+    # Renaming to StdBacktrace means thiserror won't automatically detect it
+    # This is necessary to avoid always requiring nightly features.
+    # Workaround suggested at <https://github.com/dtolnay/thiserror/issues/387#issuecomment-2491920480>
+    { path = "std::backtrace::Backtrace", rename = "StdBacktrace" },
+]

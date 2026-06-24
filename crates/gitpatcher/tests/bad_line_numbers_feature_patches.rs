@@ -2,6 +2,7 @@
 //!
 //! Tests that both applying patches can succeed anyways (based on the context)
 //! and that regenerating the patches doesn't generate unnecessary changes.
+#![cfg(false)] // TODO: Re-enable after re-adding support for feature patches
 use std::env;
 use std::path::{Path, PathBuf};
 

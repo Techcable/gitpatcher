@@ -17,30 +17,28 @@ name = "gitpatcher"
 path = "src/main.rs"
 
 [features]
-# Enable vendored copy of libgit2
-vendored-libgit2 = ["git2/vendored-libgit2"]
-# Use static linking for all dependencies (including libgit2)
-static = ["libz-sys/static", "vendored-libgit2"]
+default = []
+# Use static linking for all C dependencies.
+# Right now this does nothing.
+static = []
 
 [dependencies]
 gitpatcher.workspace = true
 anyhow = "1"
-slog.workspace = true
 camino.workspace = true
 clap = { version = "4.3", features = ["derive"] }
-git2.workspace = true
-# Used only to force static linking with libgit2
-libz-sys = { version = "1" }
-# Log backend
-slog-term = "2.9"
+# Logging
+slog = { workspace = true, features = ["max_level_trace"] }
+slog-scope.workspace = true
+slog-term = { version = "2.9", features = ["nested-values"] }
 
 [build-dependencies]
 # Avoid using libgit2 at build-time, as it causes issues during cross-compilation.
 # Counterintuitively, it is more portable to assume the presence of a git CLI than a C library.
 vergen-gitcl = "10"
 
+[lints]
+workspace = true
+
 [package.metadata.cargo-shear]
-ignored = [
-    # Used only to force static linking
-    "libz-sys",
-]
+ignored = []

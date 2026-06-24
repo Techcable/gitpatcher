@@ -11,10 +11,13 @@ name = "paper-patch-test"
 path = "src/main.rs"
 
 [dependencies]
-gitpatcher.workspace = true
+# need to use the old version, as v0.3 alpha only supports per-file patches
+gitpatcher = "0.2"
 anyhow = "1"
 slog.workspace = true
 duct = "1"
 clap = { version = "4.5", features = ["derive"] }
 slog-term = "2"
-git2.workspace = true
+# Still uses libgit2 rather than gitoxide.
+# In the future we probably want to replace this usage with gitoxide
+git2 = "0.21"

@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["crates/*", "."]
+default-members = ["crates/*", "."]
 
 [workspace.package]
 version = "0.3.0-alpha.0" # pre-alpha
@@ -10,21 +11,41 @@ readme = "README.md"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Techcable/gitpatcher"
 # 1.85 - Rust 2024
-rust-version = "1.85"
+# 1.88 - boolean cfg literals & let chains, required by vcs-core
+rust-version = "1.88"
 
 [workspace.dependencies]
-slog = "2.7"
+slog = "2.8"
+slog-scope = "4"
+itertools = "0.15"
+# process execution
+duct = "1.1"
 # UTF8 paths
-camino = "1.1.6"
+camino = { version = "1", features = ["serde1"] }
+relative-path = { version = "2", features = ["serde"] }
+# We use vcs-toolkit-rs for some of the jj/git interaction.
+# It looks like a good quality library, but a lot seems vibe-coded.
+vcs-core = "0.9"
+# Although we primarily use vcs-toolkit-rs, we still use some peices from gix as well.
+# The gix-url piece is particularly useful because it doesn't have the Unicode bloat of the `url` crate.
+gix-url = { version = "0.37", features = ["serde"] }
 
 [workspace.dependencies.gitpatcher]
 version = "0.3.0-alpha.0"
 path = "crates/gitpatcher"
 
-[workspace.dependencies.git2]
-version = "0.21"
-# We don't need https
-default-features = false
+[workspace.lints.clippy]
+## groups ##
+pedantic = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+
+# excessively pedantic (even for clippy::pedantic)
+items_after_statements = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+too_many_lines = "allow"
+unnecessary_debug_formatting = "allow"
 
 [profile.release]
 # Counterintuitively, this produces smaller binaries

@@ -7,6 +7,8 @@ authors.workspace = true
 readme.workspace = true
 license.workspace = true
 repository.workspace = true
+rust-version.workspace = true
+publish = false # v0.3 is still pre-alpha
 # Used to compute build version
 build = "build.rs"
 

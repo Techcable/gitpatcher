@@ -1,4 +1,7 @@
 reorder_imports = true
+# pinned to old edition to avoid format changes
+edition = "2021"
+style_edition = "2021"
 # WARNING: This option is not stable
 #
 # https://github.com/rust-lang/rustfmt/issues/5083

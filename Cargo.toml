@@ -1,14 +1,16 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.2.6"
-edition = "2021"
+version = "0.3.0-alpha.0" # pre-alpha
+edition = "2024"
 authors = ["Techcable <Techcable@techcable.net>"]
 readme = "README.md"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Techcable/gitpatcher"
+# 1.85 - Rust 2024
+rust-version = "1.85"
 
 [workspace.dependencies]
 slog = "2.7"
@@ -16,7 +18,7 @@ slog = "2.7"
 camino = "1.1.6"
 
 [workspace.dependencies.gitpatcher]
-version = "0.2.0"
+version = "0.3.0-alpha.0"
 path = "crates/gitpatcher"
 
 [workspace.dependencies.git2]

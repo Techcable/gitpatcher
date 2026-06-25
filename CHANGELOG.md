@@ -11,6 +11,10 @@ A title is required for publishing a github release, so all versions should have
 
 ## Unreleased
 
+### Changes
+- Avoid use of libgit2 at build time to detect CLI version.
+  Instead call out to the git CLI. Only affects the CLI, not the library.
+
 ## 0.2.4 - 2026-06-24
 Correctly resolve patchdir directory, relative to repo workdir.
 

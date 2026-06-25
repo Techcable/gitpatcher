@@ -33,8 +33,9 @@ libz-sys = { version = "1" }
 slog-term = "2.9"
 
 [build-dependencies]
-# Already using libgit2 for engine, might as well use for versions
-vergen-git2 = "9"
+# Avoid using libgit2 at build-time, as it causes issues during cross-compilation.
+# Counterintuitively, it is more portable to assume the presence of a git CLI than a C library.
+vergen-gitcl = "9"
 
 [package.metadata.cargo-shear]
 ignored = [

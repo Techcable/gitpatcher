@@ -1,7 +1,7 @@
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
-    vergen_git2::Emitter::new()
+    vergen_gitcl::Emitter::new()
         .add_instructions(
-            &vergen_git2::Git2Builder::default()
+            &vergen_gitcl::GitclBuilder::default()
                 .describe(
                     /* tags */ true,
                     /* dirty */ true,

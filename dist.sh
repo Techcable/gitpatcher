@@ -25,7 +25,7 @@ function copy_and_sign() {
 for target in "${targets[@]}"; do
     echo "=== Building target: $target ==="
     suffixes=("")
-    compflags=(--release --features static)
+    compflags=(--release -p gitpatcher-bin --features static)
     if echo $target | grep -Eq "${TARGET_SKIP_PATTERN:-nothing}"; then
         echo "WARNING: Skipping $target (in accordinace with \$TARGET_SKIP_PATTERN)" >&2;
         continue;

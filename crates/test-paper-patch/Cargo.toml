@@ -11,7 +11,7 @@ name = "paper-patch-test"
 path = "src/main.rs"
 
 [dependencies]
-gitpatcher = { version = "0.2.0", path = "../.." }
+gitpatcher.workspace = true
 anyhow = "1"
 slog.workspace = true
 duct = "1"

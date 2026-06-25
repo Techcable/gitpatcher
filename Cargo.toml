@@ -46,6 +46,10 @@ slog = "2.7"
 # UTF8 paths
 camino = "1.1.6"
 
+[workspace.dependencies.gitpatcher]
+version = "0.2.0"
+path = "."
+
 [workspace.dependencies.git2]
 version = "0.21"
 # We don't need https

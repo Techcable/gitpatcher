@@ -34,7 +34,7 @@ testdir = "0.10"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.2.4"
+version = "0.2.5"
 edition = "2021"
 authors = ["Techcable <Techcable@techcable.net>"]
 readme = "README.md"

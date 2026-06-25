@@ -11,6 +11,11 @@ A title is required for publishing a github release, so all versions should have
 
 ## Unreleased
 
+## 0.2.5 - 2025-06-25
+Avoid use of libgit2 for build-time version detection.
+
+Improves the ability to cross-compile.
+
 ### Changes
 - Avoid use of libgit2 at build time to detect CLI version.
   Instead call out to the git CLI. Only affects the CLI, not the library.

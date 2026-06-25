@@ -1,6 +1,6 @@
 [package]
 name = "gitpatcher-bin"
-description = """A command line app for using gitpatcher"""
+description = "A command line app for using gitpatcher"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

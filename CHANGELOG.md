@@ -11,6 +11,9 @@ A title is required for publishing a github release, so all versions should have
 
 ## Unreleased
 
+### Changes
+- Commit lockfile to version control.
+
 ## 0.2.5 - 2025-06-25
 Avoid use of libgit2 for build-time version detection.
 

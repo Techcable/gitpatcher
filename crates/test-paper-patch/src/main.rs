@@ -36,7 +36,7 @@ fn paper_dir() -> &'static Path {
 
 /// Run a gradle command in the paper repo.
 ///
-/// Use exactly like [`duct::cmd`].
+/// Use exactly like [`duct::cmd()`].
 fn gradle(args: impl IntoIterator<Item = impl Into<OsString>>) -> duct::Expression {
     duct::cmd(paper_dir().join("gradlew"), args).dir(paper_dir())
 }

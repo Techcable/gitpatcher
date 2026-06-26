@@ -135,9 +135,8 @@ jobs:
         run: |
           cargo doc --workspace --verbose --no-default-features --features "${{ matrix.features }}"
   cargo-reedme:
-    if: false # disabled
     # Only run on PRs if the source branch is on someone else's repo
-    # if: ${{ github.event_name != 'pull_request' || github.repository != github.event.pull_request.head.repo.full_name }}
+    if: ${{ github.event_name != 'pull_request' || github.repository != github.event.pull_request.head.repo.full_name }}
 
     runs-on: ubuntu-latest
     steps:
@@ -208,7 +207,7 @@ jobs:
   # App: https://github.com/marketplace/actions/alls-green
   allgood:
     if: always()
-    needs: [test,clippy,docs,typos,rustfmt,pyfmt]
+    needs: [test,clippy,docs,cargo-reedme,typos,rustfmt,pyfmt]
     runs-on: ubuntu-latest
     steps:
       - name: Decide whether the needed jobs succeeded or failed

@@ -13,6 +13,7 @@ A title is required for publishing a github release, so all versions should have
 
 ### Changes
 - Commit lockfile to version control.
+- Sync crate docs with README.md using `cargo-reedme`
 
 ## 0.2.5 - 2025-06-25
 Avoid use of libgit2 for build-time version detection.

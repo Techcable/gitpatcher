@@ -96,6 +96,7 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
           components: clippy
+      - uses: Swatinem/rust-cache@v2
       - name: Clippy
         # The `--all` flag is equivalent to `--workspace`
         run: |
@@ -131,6 +132,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
+      - uses: Swatinem/rust-cache@v2
       - name: Docs
         run: |
           cargo doc --workspace --verbose --no-default-features --features "${{ matrix.features }}"
@@ -147,6 +149,7 @@ jobs:
       - uses: taiki-e/cache-cargo-install-action@v3  # not supported by regular install action
         with:
           tool: cargo-reedme
+      - uses: Swatinem/rust-cache@v2
       - name: Setup python
         id: setup-python
         uses: actions/setup-python@v6

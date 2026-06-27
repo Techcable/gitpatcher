@@ -167,7 +167,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+        # need nightly for unstable formatting features
+      - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rustfmt
       - shell: bash

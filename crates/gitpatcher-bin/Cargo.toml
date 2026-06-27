@@ -35,7 +35,7 @@ slog-term = "2.9"
 [build-dependencies]
 # Avoid using libgit2 at build-time, as it causes issues during cross-compilation.
 # Counterintuitively, it is more portable to assume the presence of a git CLI than a C library.
-vergen-gitcl = "9"
+vergen-gitcl = "10"
 
 [package.metadata.cargo-shear]
 ignored = [

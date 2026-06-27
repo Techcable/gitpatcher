@@ -13,6 +13,7 @@ A title is required for publishing a github release, so all versions should have
 
 ### Changes
 - Commit lockfile to version control.
+- Update `vergen-gitcl` from v9 to v10
 - Sync crate docs with README.md using `cargo-reedme`
 - Move library code to subdirectory
 

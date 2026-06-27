@@ -150,6 +150,9 @@ jobs:
         with:
           tool: cargo-reedme
       - uses: Swatinem/rust-cache@v2
+        with:
+          # cached separately
+          cache-bin: false
       - name: Setup python
         id: setup-python
         uses: actions/setup-python@v6

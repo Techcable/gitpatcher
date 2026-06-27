@@ -11,11 +11,17 @@ A title is required for publishing a github release, so all versions should have
 
 ## Unreleased
 
+## 0.2.6 - 2026-06-26
+Commit lockfile to version control and update `vergen-gitcl`.
+
 ### Changes
-- Commit lockfile to version control.
-- Update `vergen-gitcl` from v9 to v10
-- Sync crate docs with README.md using `cargo-reedme`
-- Move library code to subdirectory
+- Commit lockfile to version control (f87ae35, 16ba52a)
+- Update `vergen-gitcl` from v9 to v10 (b2d2e609)
+- Sync crate docs with README.md using `cargo-reedme` (a18e01c)
+- Move library code to subdirectory (9bc7968dac)
+
+### Added
+- Setup CI using Github Actions (a43f7d8)
 
 ## 0.2.5 - 2026-06-25
 Avoid use of libgit2 for build-time version detection.

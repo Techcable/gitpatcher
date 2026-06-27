@@ -1,4 +1,5 @@
 import os
+import shlex
 import sys
 
 from invoke import Collection, task
@@ -36,6 +37,25 @@ def check(ctx, format=True):
         run_format(ctx, check=True)
 
 
+REEDME_SYNC_PKGS = ["gitpatcher", "test-paper-patch"]
+"""
+Packages to sync with cargo-reedme.
+
+We only want to sync the readmes of a subset of packages.
+Some crates don't have dedicated README and trying to sync them will affect the root readme.
+"""
+
+
+@task
+def cargo_reedme(ctx, check=False):
+    args = ["cargo", "reedme"]
+    if check:
+        args.append("--check")
+    for pkg in REEDME_SYNC_PKGS:
+        args.extend(("-p", pkg))
+    ctx.run(shlex.join(args))
+
+
 @task
 def clippy(ctx):
     ctx.run("cargo clippy --workspace --all-targets", pty=True)
@@ -67,7 +87,7 @@ def check_spelling(ctx, fix=False):
     ctx.run(f"uvx typos@{TYPOS_VER}" + maybe_write)
 
 
-ns = Collection(test, check, clippy, run_format, check_spelling)
+ns = Collection(test, check, clippy, cargo_reedme, run_format, check_spelling)
 ns.configure(
     {
         "run": {

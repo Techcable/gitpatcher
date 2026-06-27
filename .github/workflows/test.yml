@@ -147,11 +147,21 @@ jobs:
       - uses: taiki-e/cache-cargo-install-action@v3  # not supported by regular install action
         with:
           tool: cargo-reedme
-      - name: Run cargo-reedme
-        # Intentionally run without `--workspace`.
-        # Instead we explicitly pass the packages we want to sync.
+      - name: Setup python
+        id: setup-python
+        uses: actions/setup-python@v6
+      - name: Setup uv
+        id: setup-uv
+        uses: astral-sh/setup-uv@v8.2.0
+      - name: Install pyinvoke
+        id: install-pyinvoke
         run: |
-          cargo reedme --check -p gitpathcer -p test-paper-patch
+          uv tool install invoke
+      - name: Run cargo-reedme
+        # We only want to sync the readmes of a subset of packages for reasons explained in tasks.py.
+        # Delegate to pyinvoke in order to keep the list of packages in one central place.
+        run: |
+          invoke cargo-reedme --check
   typos:
     # Only run on PRs if the source branch is on someone else's repo
     if: ${{ github.event_name != 'pull_request' || github.repository != github.event.pull_request.head.repo.full_name }}

@@ -148,9 +148,10 @@ jobs:
         with:
           tool: cargo-reedme
       - name: Run cargo-reedme
-        # Intentionally run without `--workspace`
+        # Intentionally run without `--workspace`.
+        # Instead we explicitly pass the packages we want to sync.
         run: |
-          cargo reedme --check
+          cargo reedme --check -p gitpathcer -p test-paper-patch
   typos:
     # Only run on PRs if the source branch is on someone else's repo
     if: ${{ github.event_name != 'pull_request' || github.repository != github.event.pull_request.head.repo.full_name }}

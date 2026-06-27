@@ -135,7 +135,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Docs
         run: |
-          cargo doc --workspace --verbose --no-default-features --features "${{ matrix.features }}"
+          cargo doc --no-deps --workspace --verbose --no-default-features --features "${{ matrix.features }}"
   cargo-reedme:
     # Only run on PRs if the source branch is on someone else's repo
     if: ${{ github.event_name != 'pull_request' || github.repository != github.event.pull_request.head.repo.full_name }}

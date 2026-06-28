@@ -12,9 +12,5 @@ pub fn main() {
 }
 
 fn has_feature_enabled(name: &str) -> bool {
-    std::env::var_os(format!(
-        "CARGO_FEATURE_{}",
-        name.replace('-', "_").to_uppercase()
-    ))
-    .is_some()
+    std::env::var_os(format!("CARGO_FEATURE_{}", name.replace('-', "_").to_uppercase())).is_some()
 }

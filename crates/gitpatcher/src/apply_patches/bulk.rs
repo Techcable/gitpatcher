@@ -59,11 +59,9 @@ impl<'repo> BulkPatchApply<'repo> {
     /// Apply all the patches in the directory.
     // TODO: Consider splitting into multiple functions?
     pub fn apply_all(self) -> Result<(), BulkApplyError> {
-        let entries = std::fs::read_dir(&self.patch_dir).map_err(|cause| {
-            BulkApplyError::ErrorAccessPatchDir {
-                cause,
-                patch_dir: self.patch_dir.clone(),
-            }
+        let entries = std::fs::read_dir(&self.patch_dir).map_err(|cause| BulkApplyError::ErrorAccessPatchDir {
+            cause,
+            patch_dir: self.patch_dir.clone(),
         })?;
         /*
          * TODO: Avoid buffering all these patches in-memory
@@ -91,32 +89,31 @@ impl<'repo> BulkPatchApply<'repo> {
                 );
                 continue;
             }
-            let file_name = entry
-                .file_name()
-                .into_string()
-                .map_err(|invalid_file_name| BulkApplyError::PatchNameInvalidUtf8 {
-                    raw_entry: PathBuf::from(invalid_file_name),
-                })?;
+            let file_name =
+                entry
+                    .file_name()
+                    .into_string()
+                    .map_err(|invalid_file_name| BulkApplyError::PatchNameInvalidUtf8 {
+                        raw_entry: PathBuf::from(invalid_file_name),
+                    })?;
             let patch_name = file_name
                 .strip_suffix(".patch")
                 .unwrap_or_else(|| panic!("Patch file doesn't end with `.patch`: {file_name:?}"));
-            let patch_file_contents =
-                String::from_utf8(std::fs::read(&full_patch_path).map_err(|cause| {
-                    BulkApplyError::FailedReadPatch {
-                        cause,
-                        patch_file: full_patch_path.clone(),
-                    }
-                })?)
-                .map_err(|cause| BulkApplyError::PatchContentsInvalidUtf8 {
+            let patch_file_contents = String::from_utf8(std::fs::read(&full_patch_path).map_err(|cause| {
+                BulkApplyError::FailedReadPatch {
                     cause,
                     patch_file: full_patch_path.clone(),
-                })?;
-            let email = EmailMessage::parse(&patch_file_contents).map_err(|cause| {
-                BulkApplyError::FailedParsePatch {
-                    patch_file: full_patch_path.clone(),
-                    cause,
                 }
+            })?)
+            .map_err(|cause| BulkApplyError::PatchContentsInvalidUtf8 {
+                cause,
+                patch_file: full_patch_path.clone(),
             })?;
+            let email =
+                EmailMessage::parse(&patch_file_contents).map_err(|cause| BulkApplyError::FailedParsePatch {
+                    patch_file: full_patch_path.clone(),
+                    cause,
+                })?;
             patch_files.push(BufferedPatch {
                 email,
                 patch_file: full_patch_path,
@@ -144,11 +141,7 @@ impl<'repo> BulkPatchApply<'repo> {
                     name: patch.patch_name.clone(),
                 })?;
         }
-        slog::info!(
-            self.logger,
-            "Successfully applied {} patches!",
-            patch_files.len()
-        );
+        slog::info!(self.logger, "Successfully applied {} patches!", patch_files.len());
         Ok(())
     }
 }
@@ -163,7 +156,9 @@ pub enum BulkApplyError {
         cause: io::Error,
     },
     #[error("Patch name must be valid UTF8: {}", raw_entry.display())]
-    PatchNameInvalidUtf8 { raw_entry: PathBuf },
+    PatchNameInvalidUtf8 {
+        raw_entry: PathBuf,
+    },
     #[error("Failed to read patch file: {}", patch_file.display())]
     FailedReadPatch {
         patch_file: PathBuf,

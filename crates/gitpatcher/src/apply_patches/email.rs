@@ -4,10 +4,11 @@ use bstr::ByteSlice;
 use camino::{Utf8Path, Utf8PathBuf};
 use git2::build::TreeUpdateBuilder;
 use git2::{Delta as DeltaStatus, FileMode, Repository, ResetType, Signature};
-use nom::bytes::complete::{tag, take_until, take_until1, take_while1, take_while_m_n};
+use nom::IResult;
+use nom::bytes::complete::{tag, take_until, take_until1, take_while_m_n, take_while1};
 use nom::character::{is_digit, is_hex_digit};
 use nom::combinator::{all_consuming, opt, recognize, rest};
-use nom::{sequence::tuple, IResult};
+use nom::sequence::tuple;
 use time::OffsetDateTime;
 
 pub struct EmailMessage {
@@ -48,13 +49,8 @@ impl<T> AuthorInfo<T> {
     }
 }
 fn parse_author_line(input: &[u8]) -> IResult<&[u8], AuthorInfo<&[u8]>> {
-    let (input, (_, name, _, email, _)) = tuple((
-        tag("From: "),
-        take_until1(" <"),
-        tag(" <"),
-        take_until1(">"),
-        tag(">"),
-    ))(input)?;
+    let (input, (_, name, _, email, _)) =
+        tuple((tag("From: "), take_until1(" <"), tag(" <"), take_until1(">"), tag(">")))(input)?;
     Ok((input, AuthorInfo { name, email }))
 }
 fn parse_date_line(input: &[u8]) -> IResult<&[u8], &[u8]> {
@@ -75,8 +71,7 @@ fn parse_subject_line(input: &[u8]) -> IResult<&[u8], &[u8]> {
 }
 
 fn parse_begin_diff_line(input: &[u8]) -> IResult<&[u8], (&[u8], &[u8])> {
-    let (input, (_, file_a, _, file_b)) =
-        tuple((tag("diff --git a/"), take_until(" b/"), tag(" b/"), rest))(input)?;
+    let (input, (_, file_a, _, file_b)) = tuple((tag("diff --git a/"), take_until(" b/"), tag(" b/"), rest))(input)?;
     Ok((input, (file_a, file_b)))
 }
 
@@ -85,24 +80,20 @@ fn match_header_line<'a, T: 'a>(
     expected: &'static str,
     parse_func: fn(&'a [u8]) -> IResult<&'a [u8], T>,
 ) -> Result<T, InvalidEmailMessage> {
-    let line = lines
-        .next()
-        .ok_or(InvalidEmailMessage::UnexpectedEof { expected })?;
+    let line = lines.next().ok_or(InvalidEmailMessage::UnexpectedEof { expected })?;
     match all_consuming(parse_func)(line.as_bytes()) {
         Ok((remaining, value)) => {
             assert_eq!(remaining, b"");
             Ok(value)
         }
-        Err(nom::Err::Error(err)) | Err(nom::Err::Failure(err)) => {
-            Err(InvalidEmailMessage::InvalidHeader {
-                actual: line.into(),
-                expected,
-                reason: nom::error::Error {
-                    input: std::str::from_utf8(err.input)?.into(),
-                    code: err.code,
-                },
-            })
-        }
+        Err(nom::Err::Error(err)) | Err(nom::Err::Failure(err)) => Err(InvalidEmailMessage::InvalidHeader {
+            actual: line.into(),
+            expected,
+            reason: nom::error::Error {
+                input: std::str::from_utf8(err.input)?.into(),
+                code: err.code,
+            },
+        }),
         Err(nom::Err::Incomplete(_)) => unreachable!(),
     }
 }
@@ -117,11 +108,7 @@ impl EmailMessage {
             .try_map(std::str::from_utf8)?
             .map(String::from);
         let date = std::str::from_utf8(match_header_line(&mut lines, "date", parse_date_line)?)?;
-        let message_summary = std::str::from_utf8(match_header_line(
-            &mut lines,
-            "subject",
-            parse_subject_line,
-        )?)?;
+        let message_summary = std::str::from_utf8(match_header_line(&mut lines, "subject", parse_subject_line)?)?;
         let mut message_summary = String::from(message_summary);
         loop {
             let line = lines.next().ok_or(InvalidEmailMessage::UnexpectedEof {
@@ -162,11 +149,12 @@ impl EmailMessage {
         if trailing_message.ends_with('\n') {
             assert_eq!(trailing_message.pop(), Some('\n'));
         }
-        let date = OffsetDateTime::parse(date, &time::format_description::well_known::Rfc2822)
-            .map_err(|cause| InvalidEmailMessage::InvalidDate {
+        let date = OffsetDateTime::parse(date, &time::format_description::well_known::Rfc2822).map_err(|cause| {
+            InvalidEmailMessage::InvalidDate {
                 cause,
                 actual: date.into(),
-            })?;
+            }
+        })?;
         Ok(EmailMessage {
             git_diff,
             date,
@@ -201,18 +189,12 @@ impl EmailMessage {
         match ctx.git_delta.status() {
             DeltaStatus::Deleted => {
                 assert!(ctx.git_delta.old_file().exists(), "Old file should exist");
-                assert!(
-                    !ctx.git_delta.new_file().exists(),
-                    "New file should not exist"
-                );
+                assert!(!ctx.git_delta.new_file().exists(), "New file should not exist");
                 let path = ctx.desc.old_path().expect("Old file should have path");
                 ctx.result_tree.remove(path.as_std_path().to_path_buf());
                 return Ok(());
             }
-            DeltaStatus::Added
-            | DeltaStatus::Modified
-            | DeltaStatus::Renamed
-            | DeltaStatus::Copied => {
+            DeltaStatus::Added | DeltaStatus::Modified | DeltaStatus::Renamed | DeltaStatus::Copied => {
                 // fallthrough to generic handler
             }
             // unexpected status
@@ -224,7 +206,7 @@ impl EmailMessage {
             | DeltaStatus::Conflicted => {
                 return Err(DeltaApplyError::UnexpectedDeltaStatus {
                     status: ctx.git_delta.status(),
-                })
+                });
             }
         }
         let mut patch = git2::Patch::from_diff(&self.git_diff, ctx.delta_idx)
@@ -255,11 +237,10 @@ impl EmailMessage {
             None => None,
             Some(old_path) => {
                 // Read bytes from the tree
-                let entry = ctx.orig_tree.get_path(old_path).map_err(|_cause| {
-                    DeltaApplyError::MissingOriginalFile {
-                        path: old_path.into(),
-                    }
-                })?;
+                let entry = ctx
+                    .orig_tree
+                    .get_path(old_path)
+                    .map_err(|_cause| DeltaApplyError::MissingOriginalFile { path: old_path.into() })?;
                 let blob = ctx.repo.find_blob(entry.id()).unexpected()?;
                 assert_eq!(blob.id(), entry.id());
                 Some((entry, blob))
@@ -269,11 +250,8 @@ impl EmailMessage {
         let patched_bytes = diffy::apply_bytes(existing_bytes, &diffy_patch)
             .map_err(|cause| DeltaApplyError::FailApplyPatch { cause })?;
         let patched_oid = ctx.repo.blob(&patched_bytes).unexpected()?;
-        ctx.result_tree.upsert(
-            ctx.desc.new_path().unwrap().as_std_path(),
-            patched_oid,
-            FileMode::Blob,
-        );
+        ctx.result_tree
+            .upsert(ctx.desc.new_path().unwrap().as_std_path(), patched_oid, FileMode::Blob);
         Ok(())
     }
 
@@ -312,18 +290,9 @@ impl EmailMessage {
         let head_commit = target.head()?.peel_to_commit()?;
         let parents = vec![&head_commit];
         let message = self.full_message();
-        let commit_id = target.commit(
-            Some("HEAD"),
-            &author,
-            &author,
-            &message,
-            &updated_tree,
-            &parents,
-        )?;
+        let commit_id = target.commit(Some("HEAD"), &author, &author, &message, &updated_tree, &parents)?;
         let commit = target.find_commit(commit_id).unexpected()?;
-        target
-            .reset(commit.as_object(), ResetType::Hard, None)
-            .unexpected()?;
+        target.reset(commit.as_object(), ResetType::Hard, None).unexpected()?;
         Ok(())
     }
 }
@@ -331,7 +300,9 @@ impl EmailMessage {
 #[derive(Debug, thiserror::Error)]
 pub enum InvalidEmailMessage {
     #[error("Unexpected EOF, expected {expected}")]
-    UnexpectedEof { expected: &'static str },
+    UnexpectedEof {
+        expected: &'static str,
+    },
     #[error("Invalid header line, expected {expected}: {actual:?}")]
     InvalidHeader {
         expected: &'static str,
@@ -394,9 +365,13 @@ pub enum DeltaApplyError {
         cause: git2::Error,
     },
     #[error("Missing original file")]
-    MissingOriginalFile { path: std::path::PathBuf },
+    MissingOriginalFile {
+        path: std::path::PathBuf,
+    },
     #[error("Unexpected delta status")]
-    UnexpectedDeltaStatus { status: DeltaStatus },
+    UnexpectedDeltaStatus {
+        status: DeltaStatus,
+    },
     #[error("Unexpected binary delta")]
     BinaryDelta,
     #[error("Diffy failed to parse git delta, {cause}")]
@@ -594,12 +569,10 @@ impl<'a> TryFrom<git2::DiffFile<'a>> for DeltaFileDesc {
 
     fn try_from(git_file: git2::DiffFile<'a>) -> Result<Self, Self::Error> {
         match git_file.path() {
-            Some(path) if path.is_absolute() => {
-                Err(BadPathError::AbsolutePath(AbsolutePathError {
-                    role: None,
-                    path: git_file.path().unwrap().to_path_buf().try_into()?,
-                }))
-            }
+            Some(path) if path.is_absolute() => Err(BadPathError::AbsolutePath(AbsolutePathError {
+                role: None,
+                path: git_file.path().unwrap().to_path_buf().try_into()?,
+            })),
             None | Some(_) => Ok(DeltaFileDesc {
                 path: git_file
                     .path()

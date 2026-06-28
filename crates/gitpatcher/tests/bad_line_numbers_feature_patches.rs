@@ -18,10 +18,7 @@ pub fn approx_pi_patch() -> anyhow::Result<()> {
     let approx_pi_patch_contents = std::fs::read_to_string(&approx_pi_patch_path)?;
     let approx_pi_patch_email = EmailMessage::parse(&approx_pi_patch_contents)?;
     let repo_path = test_data_tempdir.join("approx_pi_repo");
-    let repo = Repository::init_opts(
-        &repo_path,
-        git2::RepositoryInitOptions::new().no_reinit(true),
-    )?;
+    let repo = Repository::init_opts(&repo_path, git2::RepositoryInitOptions::new().no_reinit(true))?;
     assert_eq!(repo.state(), git2::RepositoryState::Clean);
     assert!(repo.is_empty()?, "Repo should be empty");
     let repo_workdir = repo.workdir().unwrap();

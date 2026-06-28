@@ -17,7 +17,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use anyhow::{ensure, Context};
+use anyhow::{Context, ensure};
 use clap::{Args, Parser, Subcommand};
 use slog::{Drain, Logger};
 
@@ -117,7 +117,7 @@ pub fn main() -> anyhow::Result<()> {
     let paper_dir = work_dir.join("Paper");
     ensure!(paper_dir.is_dir(), "Missing `work/Paper` directory");
     PAPER_DIR.set(paper_dir.clone()).unwrap(); // init global state for gradle! macro
-                                               // check for valid HEAD in work/Paper
+    // check for valid HEAD in work/Paper
     duct::cmd!("git", "-C", paper_dir, "rev-parse", "HEAD")
         .stdout_null()
         .run()
@@ -125,16 +125,13 @@ pub fn main() -> anyhow::Result<()> {
     match args.command {
         RootCommand::Gradle { args } => {
             gradle(&args).run().with_context(|| {
-                let args_desc =
-                    args.iter()
-                        .enumerate()
-                        .fold(String::new(), |mut desc, (idx, arg)| {
-                            if idx > 0 {
-                                desc.push(' ');
-                            }
-                            desc.push_str(arg);
-                            desc
-                        });
+                let args_desc = args.iter().enumerate().fold(String::new(), |mut desc, (idx, arg)| {
+                    if idx > 0 {
+                        desc.push(' ');
+                    }
+                    desc.push_str(arg);
+                    desc
+                });
                 format!("Failed to execute command: ./gradlew {args_desc}")
             })?;
             Ok(())
@@ -172,8 +169,7 @@ impl GitPatcherRebuildArgs {
     fn rebuild_api(&self) -> anyhow::Result<()> {
         eprintln!("Rebuilding API patches");
         self.do_rebuild(
-            &git2::Repository::open(paper_dir().join("Paper-API"))
-                .context("Failed to open API repo")?,
+            &git2::Repository::open(paper_dir().join("Paper-API")).context("Failed to open API repo")?,
             Path::new("patches/api"),
         )
     }
@@ -181,35 +177,21 @@ impl GitPatcherRebuildArgs {
     fn rebuild_server(&self) -> anyhow::Result<()> {
         eprintln!("Rebuilding server patches");
         self.do_rebuild(
-            &git2::Repository::open(paper_dir().join("Paper-Server"))
-                .context("Failed to open server repo")?,
+            &git2::Repository::open(paper_dir().join("Paper-Server")).context("Failed to open server repo")?,
             Path::new("patches/server"),
         )
     }
 
-    fn do_rebuild(
-        &self,
-        target_repo: &git2::Repository,
-        relative_patch_dir: &Path,
-    ) -> anyhow::Result<()> {
-        let paper_repo =
-            git2::Repository::open(paper_dir()).context("Failed to open work/Paper repo")?;
+    fn do_rebuild(&self, target_repo: &git2::Repository, relative_patch_dir: &Path) -> anyhow::Result<()> {
+        let paper_repo = git2::Repository::open(paper_dir()).context("Failed to open work/Paper repo")?;
         use gitpatcher::regenerate_patches::PatchFileSet;
         let workdir = target_repo.workdir().expect("Missing workdir");
         let base_commit: git2::Commit = target_repo
             .revparse_single("base")
             .and_then(|r| r.peel_to_commit())
             .context("Unable to resolve reference: base")?;
-        let mut patch_set = PatchFileSet::load(
-            &paper_repo,
-            relative_patch_dir.try_into().expect("non-UTF8 path"),
-        )
-        .with_context(|| {
-            format!(
-                "Unable to load PatchFileSet from {}",
-                relative_patch_dir.display()
-            )
-        })?;
+        let mut patch_set = PatchFileSet::load(&paper_repo, relative_patch_dir.try_into().expect("non-UTF8 path"))
+            .with_context(|| format!("Unable to load PatchFileSet from {}", relative_patch_dir.display()))?;
         gitpatcher::regenerate_patches::regenerate_patches(
             &base_commit,
             &mut patch_set,
@@ -223,9 +205,7 @@ impl GitPatcherRebuildArgs {
         )
         .with_context(|| format!("Failed to regenerate patches from {}", workdir.display()))?;
         if self.stage_result {
-            patch_set
-                .stage_changes()
-                .context("Failed to stage changes")?;
+            patch_set.stage_changes().context("Failed to stage changes")?;
         }
         Ok(())
     }

@@ -7,13 +7,13 @@ use bstr::ByteSlice;
 use camino::{Utf8Path, Utf8PathBuf};
 use git2::build::CheckoutBuilder;
 use git2::{Commit, DiffFormat, DiffOptions, Repository, RepositoryState};
+use nom::IResult;
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take, take_until, take_while1};
 use nom::character::is_hex_digit;
 use nom::combinator::{opt, recognize};
 use nom::sequence::tuple;
-use nom::IResult;
-use slog::{debug, info, trace, warn, Logger};
+use slog::{Logger, debug, info, trace, warn};
 
 use crate::format_patches::{FormatOptions, PatchFormatError, PatchFormatter};
 use crate::utils::RememberLast;
@@ -32,10 +32,7 @@ pub struct PatchFileSet<'a> {
 impl<'a> PatchFileSet<'a> {
     fn repo_workdir(&self) -> Result<Utf8PathBuf, PatchError> {
         Ok(Utf8PathBuf::try_from(
-            self.root_repo
-                .workdir()
-                .ok_or(PatchError::BareRepoError)?
-                .to_owned(),
+            self.root_repo.workdir().ok_or(PatchError::BareRepoError)?.to_owned(),
         )?)
     }
 
@@ -57,13 +54,11 @@ impl<'a> PatchFileSet<'a> {
         self.patches.clear();
         let workdir = self.repo_workdir()?;
         let patch_dir = workdir.join(&self.relative_patch_dir);
-        for entry in
-            std::fs::read_dir(&patch_dir).map_err(|cause| PatchError::ScanPatchDirFailed {
-                patch_dir: self.relative_patch_dir.clone(),
-                workdir: workdir.clone(),
-                cause,
-            })?
-        {
+        for entry in std::fs::read_dir(&patch_dir).map_err(|cause| PatchError::ScanPatchDirFailed {
+            patch_dir: self.relative_patch_dir.clone(),
+            workdir: workdir.clone(),
+            cause,
+        })? {
             let entry = entry?;
             let file_name = match entry.file_name().to_str() {
                 Some(file_name) => file_name.to_string(),
@@ -106,20 +101,15 @@ pub struct PatchFile {
 impl PatchFile {
     fn parse(parent: &Utf8Path, file_name: &str) -> Result<Self, PatchError> {
         // Must match ASCII regex `[\d]{4}-(commit_name).patch`
-        if file_name.len() >= 5 && file_name.as_bytes()[4] == b'-' && file_name.ends_with(".patch")
-        {
-            let index =
-                usize::from_str(&file_name[..4]).map_err(|_| PatchError::InvalidPatchName {
-                    name: file_name.into(),
-                })?;
+        if file_name.len() >= 5 && file_name.as_bytes()[4] == b'-' && file_name.ends_with(".patch") {
+            let index = usize::from_str(&file_name[..4])
+                .map_err(|_| PatchError::InvalidPatchName { name: file_name.into() })?;
             Ok(PatchFile {
                 index,
                 path: parent.join(file_name),
             })
         } else {
-            Err(PatchError::InvalidPatchName {
-                name: file_name.into(),
-            })
+            Err(PatchError::InvalidPatchName { name: file_name.into() })
         }
     }
 }
@@ -141,10 +131,7 @@ pub fn regenerate_patches(
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or_else(|| panic!("Invalid path for target repo: {}", target.path().display()));
-    info!(
-        logger,
-        "Formatting patches for {}", patch_set.relative_patch_dir
-    );
+    info!(logger, "Formatting patches for {}", patch_set.relative_patch_dir);
     let workdir = patch_set.repo_workdir()?;
     // Remove old patches
     match target.state() {
@@ -202,16 +189,13 @@ pub fn regenerate_patches(
             };
             let mut builder = patch_set.root_repo.treebuilder(None)?;
             builder.insert(
-                path.file_name()
-                    .unwrap_or_else(|| panic!("Invalid parent {:?}", path)),
+                path.file_name().unwrap_or_else(|| panic!("Invalid parent {:?}", path)),
                 child_tree.write()?,
                 entry.filemode(),
             )?;
             filtered_tree = Some(builder);
         }
-        let filtered_tree = patch_set
-            .root_repo
-            .find_tree(filtered_tree.unwrap().write()?)?;
+        let filtered_tree = patch_set.root_repo.find_tree(filtered_tree.unwrap().write()?)?;
         let mut ops = DiffOptions::new();
         ops.ignore_whitespace_eol(true);
         let diff = patch_set
@@ -266,9 +250,7 @@ pub fn regenerate_patches(
             }
         }
         if num_trivial > 0 {
-            patch_set
-                .root_repo
-                .checkout_head(Some(&mut checkout_patches))?;
+            patch_set.root_repo.checkout_head(Some(&mut checkout_patches))?;
         }
     }
 
@@ -342,15 +324,21 @@ fn is_trivial_line(line: &[u8]) -> bool {
 pub enum PatchError {
     /// The patched repo was in an invalid [RepositoryState]
     #[error("Target repo is in unexpected state: {state:?}")]
-    PatchedRepoInvalidState { state: RepositoryState },
+    PatchedRepoInvalidState {
+        state: RepositoryState,
+    },
     #[error("Repository cannot be bare")]
     BareRepoError,
     #[error("Invalid name for patch: {name:?}")]
-    InvalidPatchName { name: String },
+    InvalidPatchName {
+        name: String,
+    },
     #[error("Failed to format patches: {0}")]
     PatchFormatFailed(#[from] PatchFormatError),
     #[error("Patch directory must be relative path: {patch_dir} (resolved against repo)")]
-    AbsolutePatchDir { patch_dir: Utf8PathBuf },
+    AbsolutePatchDir {
+        patch_dir: Utf8PathBuf,
+    },
     #[error("Unable to scan patch directory {patch_dir} in repo workdir {workdir}")]
     ScanPatchDirFailed {
         patch_dir: Utf8PathBuf,

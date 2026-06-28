@@ -5,8 +5,8 @@ use anyhow::Context;
 use camino::Utf8PathBuf;
 use clap::{Parser, Subcommand};
 use git2::{ObjectType, Repository};
-use gitpatcher::apply_patches::bulk::BulkPatchApply;
 use gitpatcher::apply_patches::EmailMessage;
+use gitpatcher::apply_patches::bulk::BulkPatchApply;
 use gitpatcher::regenerate_patches::PatchFileSet;
 use slog::{Drain, Logger};
 
@@ -73,12 +73,8 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn apply_all_patches(logger: Logger, opts: ApplyAllPatches) -> anyhow::Result<()> {
-    let target = Repository::open(&opts.target_repo).with_context(|| {
-        format!(
-            "Unable to access target repo: {}",
-            opts.target_repo.display()
-        )
-    })?;
+    let target = Repository::open(&opts.target_repo)
+        .with_context(|| format!("Unable to access target repo: {}", opts.target_repo.display()))?;
     let bulk_apply = BulkPatchApply::new(&logger, &target, opts.patch_dir);
     if let Some(ref upstream) = opts.upstream {
         bulk_apply.reset_upstream(upstream).with_context(|| {
@@ -88,9 +84,7 @@ fn apply_all_patches(logger: Logger, opts: ApplyAllPatches) -> anyhow::Result<()
             )
         })?;
     }
-    bulk_apply
-        .apply_all()
-        .context("Failed to bulk_apply patches")?;
+    bulk_apply.apply_all().context("Failed to bulk_apply patches")?;
     Ok(())
 }
 
@@ -103,31 +97,23 @@ fn apply_patch(opts: ApplyPatchOpts) -> anyhow::Result<()> {
         .with_context(|| format!("Unable to access target repo {}", target_repo.display(),))?;
     let message = std::fs::read_to_string(&opts.patch_file).context("Unable to read patch")?;
     let message = EmailMessage::parse(&message).context("Error parsing patch")?;
-    message
-        .apply_commit(&target_repo)
-        .context("Unable to apply patch")?;
+    message.apply_commit(&target_repo).context("Unable to apply patch")?;
     println!("Applied: {}", opts.patch_file.display());
     Ok(())
 }
 
 fn regenerate_patches(logger: Logger, opts: RegeneratePatchOpts) -> anyhow::Result<()> {
-    let patched_repo = Repository::open(&opts.patched_repo).with_context(|| {
-        format!(
-            "Unable to access patched repo: {}",
-            opts.patched_repo.display()
-        )
-    })?;
+    let patched_repo = Repository::open(&opts.patched_repo)
+        .with_context(|| format!("Unable to access patched repo: {}", opts.patched_repo.display()))?;
     let upstream_obj = patched_repo
         .resolve_reference_from_short_name(&opts.upstream)
         .and_then(|reference| reference.peel(ObjectType::Any))
         .with_context(|| format!("Unable to resolve upstream ref {:?}", opts.upstream))?;
-    let base_repo =
-        Repository::discover(&opts.patch_dir).context("Unable to discover repo for patch dir")?;
-    let mut patches =
-        PatchFileSet::load(&base_repo, &opts.patch_dir).context("Unable to load patches")?;
-    let upstream_commit = upstream_obj.as_commit().with_context(|| {
-        format!("Upstream ref must be either a tree or a commit: {upstream_obj:?}")
-    })?;
+    let base_repo = Repository::discover(&opts.patch_dir).context("Unable to discover repo for patch dir")?;
+    let mut patches = PatchFileSet::load(&base_repo, &opts.patch_dir).context("Unable to load patches")?;
+    let upstream_commit = upstream_obj
+        .as_commit()
+        .with_context(|| format!("Upstream ref must be either a tree or a commit: {upstream_obj:?}"))?;
     ::gitpatcher::regenerate_patches::regenerate_patches(
         upstream_commit,
         &mut patches,

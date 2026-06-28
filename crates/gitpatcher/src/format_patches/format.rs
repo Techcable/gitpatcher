@@ -35,10 +35,7 @@ impl<'a> CommitMessage<'a> {
         let summary_end = full.find('\n').unwrap_or(full.len());
         let potential_body = &full[summary_end..];
         // Body starts at the first non-whitespace char past summary
-        let body_start = potential_body
-            .find(|c: char| !c.is_whitespace())
-            .unwrap_or(0)
-            + summary_end;
+        let body_start = potential_body.find(|c: char| !c.is_whitespace()).unwrap_or(0) + summary_end;
         // Strip trailing whitespace
         let body_end = match potential_body.rfind(|c: char| !c.is_whitespace()) {
             Some(non_ws_idx) => non_ws_idx + 1, // because this is exclusive, we need to offset by 1
@@ -72,9 +69,7 @@ impl<'a> CommitMessage<'a> {
         // Strip trailing '.' && '-'
         sanitized_name.truncate(sanitized_name.rfind(|c| c != '.' && c != '-').unwrap_or(0) + 1);
         // Strip leading '-'
-        let first_valid = sanitized_name
-            .find(|c| c != '-')
-            .unwrap_or(sanitized_name.len());
+        let first_valid = sanitized_name.find(|c| c != '-').unwrap_or(sanitized_name.len());
         sanitized_name.drain(0..first_valid);
         sanitized_name.truncate(MAX_LENGTH);
         format!("{:04}-{}.patch", patch_no, sanitized_name)
@@ -109,10 +104,7 @@ mod test {
             "0008-Version-Command-2.0.patch"
         );
         assert_eq!(
-            patch_file_name(
-                "Add methods for working with arrows stuck in living entities",
-                20
-            ),
+            patch_file_name("Add methods for working with arrows stuck in living entities", 20),
             "0020-Add-methods-for-working-with-arrows-stuck-in-living-.patch"
         );
         assert_eq!(
@@ -147,10 +139,7 @@ mod test {
             patch_file_name("Performance & Concurrency Improvements to Permissions", 149),
             "0149-Performance-Concurrency-Improvements-to-Permissions.patch"
         );
-        assert_eq!(
-            patch_file_name("Here's Johnny!", 159),
-            "0159-Here-s-Johnny.patch"
-        );
+        assert_eq!(patch_file_name("Here's Johnny!", 159), "0159-Here-s-Johnny.patch");
         // Server patches
         assert_eq!(
             patch_file_name("Add ability to configure frosted_ice properties", 95),

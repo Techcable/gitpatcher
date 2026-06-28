@@ -27,11 +27,7 @@ impl<'a> SimpleParser<'a> {
         self.line_number += 1;
         Ok(BStr::new(line))
     }
-    pub fn take_while(
-        &mut self,
-        mut matcher: impl FnMut(&BStr) -> bool,
-        mut handler: impl FnMut(&BStr),
-    ) {
+    pub fn take_while(&mut self, mut matcher: impl FnMut(&BStr) -> bool, mut handler: impl FnMut(&BStr)) {
         while let Ok(line) = self.peek() {
             if matcher(line) {
                 handler(self.pop().unwrap());
@@ -70,9 +66,7 @@ pub struct RememberLast<T: Clone, const LIMIT: usize> {
 impl<T: Clone, const LIMIT: usize> RememberLast<T, LIMIT> {
     pub fn new() -> Self {
         assert!(LIMIT > 0);
-        RememberLast {
-            last: ArrayVec::new(),
-        }
+        RememberLast { last: ArrayVec::new() }
     }
     pub fn remember(&mut self, element: &T) {
         if self.last.len() < LIMIT {
@@ -97,8 +91,7 @@ impl<T: Clone, const LIMIT: usize> RememberLast<T, LIMIT> {
 
     #[inline]
     pub fn get_back(&self, offset: usize) -> Option<&T> {
-        self.last
-            .get(self.last.len().checked_sub(offset)?.checked_sub(1)?)
+        self.last.get(self.last.len().checked_sub(offset)?.checked_sub(1)?)
     }
 
     /// The last elements we remember,

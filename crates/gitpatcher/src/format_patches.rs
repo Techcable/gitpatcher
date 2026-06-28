@@ -1,7 +1,7 @@
 use bstr::{BStr, BString, ByteSlice, ByteVec};
 use camino::Utf8PathBuf;
 use git2::{Commit, DiffOptions, EmailCreateOptions, Oid, Repository};
-use slog::{info, Logger};
+use slog::{Logger, info};
 
 use crate::format_patches::format::{CommitMessage, InvalidCommitMessage};
 use crate::utils::SimpleParser;
@@ -65,11 +65,9 @@ impl<'repo> PatchFormatter<'repo> {
         Ok(())
     }
     fn generate(&mut self, index: usize, commit: &Commit<'repo>) -> Result<(), PatchFormatError> {
-        let message = CommitMessage::from_commit(commit).map_err(|cause| {
-            PatchFormatError::InvalidCommitMessage {
-                cause,
-                commit_id: commit.id(),
-            }
+        let message = CommitMessage::from_commit(commit).map_err(|cause| PatchFormatError::InvalidCommitMessage {
+            cause,
+            commit_id: commit.id(),
         })?;
         let last_tree = self.last_commit.tree()?;
         let tree = commit.tree()?;
@@ -91,11 +89,9 @@ impl<'repo> PatchFormatter<'repo> {
             /* author */ &commit.author(),
             &mut self.opts.email_opts,
         )?;
-        let s = cleanup_patch(BStr::new(email.as_slice())).map_err(|cause| {
-            PatchFormatError::PatchCleanupError {
-                cause,
-                patch_file: patch.clone(),
-            }
+        let s = cleanup_patch(BStr::new(email.as_slice())).map_err(|cause| PatchFormatError::PatchCleanupError {
+            cause,
+            patch_file: patch.clone(),
         })?;
         std::fs::write(&patch, s).map_err(|cause| PatchFormatError::PatchWriteError {
             cause,
@@ -138,9 +134,7 @@ fn cleanup_patch(s: &BStr) -> Result<BString, CleanupPatchErr> {
                 trailing_commit_message.push_char('\n');
             },
         )
-        .map_err(|_| CleanupPatchErr::UnexpectedEof {
-            expected: "Diff stats",
-        })?;
+        .map_err(|_| CleanupPatchErr::UnexpectedEof { expected: "Diff stats" })?;
     let trailing_commit_message = trailing_commit_message.trim();
     pushln(BStr::new(""));
     if !trailing_commit_message.is_empty() {
@@ -150,9 +144,7 @@ fn cleanup_patch(s: &BStr) -> Result<BString, CleanupPatchErr> {
     // Ignore until we see a `diff --git a/file.txt b/file.txt` line
     let diff_line = parser
         .take_until(|line| line.starts_with(b"diff"), |_| {})
-        .map_err(|_| CleanupPatchErr::UnexpectedEof {
-            expected: "Diff line",
-        })?;
+        .map_err(|_| CleanupPatchErr::UnexpectedEof { expected: "Diff line" })?;
     pushln(diff_line);
     // Dump all remaining lines
     while let Ok(line) = parser.pop() {
@@ -164,7 +156,9 @@ fn cleanup_patch(s: &BStr) -> Result<BString, CleanupPatchErr> {
 #[derive(Debug, thiserror::Error)]
 pub enum CleanupPatchErr {
     #[error("Unexpected EOF, expected {expected}")]
-    UnexpectedEof { expected: &'static str },
+    UnexpectedEof {
+        expected: &'static str,
+    },
     #[error("Invalid line @ {line_number}: {message}")]
     InvalidLine {
         line_number: usize,

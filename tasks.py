@@ -68,7 +68,7 @@ def run_format(ctx, check=False):
     maybe_check = " --check" if check else ""
     maybe_fix = " --fix" if not check else ""
     ctx.run("cargo +nightly fmt --all" + maybe_check)
-    ctx.run("taplo format" + maybe_check)
+    ctx.run("tombi format" + maybe_check)
     # cargo-sort is currently disabled as it causes excessive rebase conflicts
     # ctx.run("cargo sort --grouped --no-format --workspace" + maybe_check)a
 

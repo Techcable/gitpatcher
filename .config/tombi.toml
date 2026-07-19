@@ -1,0 +1,12 @@
+[format.rules]
+indent-width = 4
+line-width = 120
+trailing-comment-space-width = 1
+
+[[schemas]]
+path = "tombi://www.schemastore.org/cargo.json"
+include = ["*/Cargo.toml"]
+
+[schemas.format.rules]
+array-values-order.enabled = false
+table-keys-order.enabled = false

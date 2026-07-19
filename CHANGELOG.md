@@ -11,6 +11,9 @@ A title is required for publishing a github release, so all versions should have
 
 ## Unreleased
 
+### Changes
+- Use tombi instead of taplo for toml formatting
+
 ## 0.2.6 - 2026-06-26
 Commit lockfile to version control and update `vergen-gitcl`.
 

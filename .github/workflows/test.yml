@@ -192,6 +192,16 @@ jobs:
         # While `--all` is normally an alias for `--workspace`, `cargo fmt` doesn't accept the latter
         run: |
           cargo fmt --all -- --check
+  tombi:
+    # Only run on PRs if the source branch is on someone else's repo
+    if: ${{ github.event_name != 'pull_request' || github.repository != github.event.pull_request.head.repo.full_name }}
+
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: tombi-toml/setup-tombi@v1.2.3
+      - run: |
+          tombi format --check
   cargo-sort:
     if: false # disabled
     # Only run on PRs if the source branch is on someone else's repo
@@ -225,7 +235,7 @@ jobs:
   # App: https://github.com/marketplace/actions/alls-green
   allgood:
     if: always()
-    needs: [test,clippy,docs,cargo-reedme,typos,rustfmt,pyfmt]
+    needs: [test,clippy,docs,cargo-reedme,typos,rustfmt,tombi,pyfmt]
     runs-on: ubuntu-latest
     steps:
       - name: Decide whether the needed jobs succeeded or failed

@@ -134,8 +134,9 @@ jobs:
           toolchain: ${{ matrix.rust }}
       - uses: Swatinem/rust-cache@v2
       - name: Docs
+        # NOTE: Passing --document-private-items is needed to check for doc errors in private items
         run: |
-          cargo doc --no-deps --workspace --verbose --no-default-features --features "${{ matrix.features }}"
+          cargo doc --document-private-items --no-deps --workspace --verbose --no-default-features --features "${{ matrix.features }}"
   cargo-reedme:
     # Only run on PRs if the source branch is on someone else's repo
     if: ${{ github.event_name != 'pull_request' || github.repository != github.event.pull_request.head.repo.full_name }}

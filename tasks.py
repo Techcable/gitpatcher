@@ -31,6 +31,7 @@ def test(ctx):
 @task
 def check(ctx, format=True):
     clippy(ctx)
+    ctx.run("cargo +nightly doc --no-deps --workspace --all-features")
     ctx.run("cargo shear")
     # by default, check formatting as well
     if format:

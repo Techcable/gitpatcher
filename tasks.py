@@ -25,6 +25,8 @@ def log_info(msg: object):
 def test(ctx):
     check(ctx, format=False)
     ctx.run("cargo nextest run --workspace", pty=True)
+    # needed because nextest doesn't support doctests
+    ctx.run("cargo test --doc --workspace", pty=True)
     run_format(ctx, check=True)
 
 

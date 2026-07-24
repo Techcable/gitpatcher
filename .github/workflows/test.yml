@@ -67,7 +67,10 @@ jobs:
         # The `--all` flag is equivalent to `--workspace`
         run: |
           cargo nextest run --workspace --verbose --no-default-features --features "${{ matrix.features }}"
-
+      # nextest doesn't support doctests (https://github.com/nextest-rs/nextest/issues/16)
+      - name: Doctests
+        run: |
+          cargo test --doc --workspace --verbose --no-default-features --features "${{ matrix.features }}"
 
   clippy:
     # Only run on PRs if the source branch is on someone else's repo

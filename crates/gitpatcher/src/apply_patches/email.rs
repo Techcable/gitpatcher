@@ -372,8 +372,8 @@ pub enum PatchApplyError {
     UnexpectedGit {
         #[from]
         cause: git2::Error,
-        #[cfg(feature = "backtrace")]
-        #[cfg_attr(feature = "backtrace", backtrace)]
+        #[cfg(use_error_backtrace)]
+        #[cfg_attr(use_error_backtrace, backtrace)]
         backtrace: std::backtrace::Backtrace,
     },
 }
@@ -413,14 +413,14 @@ pub enum DeltaApplyError {
     UnexpectedGit {
         #[source]
         cause: git2::Error,
-        #[cfg(feature = "backtrace")]
-        #[cfg_attr(feature = "backtrace", backtrace)]
+        #[cfg(use_error_backtrace)]
+        #[cfg_attr(use_error_backtrace, backtrace)]
         backtrace: std::backtrace::Backtrace,
     },
 }
 struct UnexpectedGitError {
     cause: git2::Error,
-    #[cfg(feature = "backtrace")]
+    #[cfg(use_error_backtrace)]
     backtrace: std::backtrace::Backtrace,
 }
 impl From<UnexpectedGitError> for DeltaApplyError {
@@ -428,7 +428,7 @@ impl From<UnexpectedGitError> for DeltaApplyError {
     fn from(value: UnexpectedGitError) -> Self {
         DeltaApplyError::UnexpectedGit {
             cause: value.cause,
-            #[cfg(feature = "backtrace")]
+            #[cfg(use_error_backtrace)]
             backtrace: value.backtrace,
         }
     }
@@ -437,7 +437,7 @@ impl From<UnexpectedGitError> for PatchApplyError {
     fn from(value: UnexpectedGitError) -> Self {
         PatchApplyError::UnexpectedGit {
             cause: value.cause,
-            #[cfg(feature = "backtrace")]
+            #[cfg(use_error_backtrace)]
             backtrace: value.backtrace,
         }
     }
@@ -453,7 +453,7 @@ impl IntoUnexpected for git2::Error {
     fn unexpected(self) -> UnexpectedGitError {
         UnexpectedGitError {
             cause: self,
-            #[cfg(feature = "backtrace")]
+            #[cfg(use_error_backtrace)]
             backtrace: std::backtrace::Backtrace::capture(),
         }
     }

@@ -23,8 +23,12 @@ diffy = "0.5"
 [features]
 # Add backtraces to error types
 #
-# Requires nightly feature `error_generic_member_access`
+# Currently requires nightly feature `error_generic_member_access`.
+# On stable rust, this feature is automatically disabled.
 backtrace = []
+
+[build-dependencies]
+rustversion-detect = "0.2"
 
 [dev-dependencies]
 anyhow = "1"

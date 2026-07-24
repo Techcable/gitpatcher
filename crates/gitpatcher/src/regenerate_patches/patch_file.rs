@@ -363,16 +363,16 @@ pub enum PatchError {
     Git {
         #[from]
         cause: git2::Error,
-        #[cfg(feature = "backtrace")]
-        #[cfg_attr(feature = "backtrace", backtrace)]
+        #[cfg(use_error_backtrace)]
+        #[cfg_attr(use_error_backtrace, backtrace)]
         backtrace: std::backtrace::Backtrace,
     },
     #[error("Unexpected IO error")]
     Io {
         #[from]
         cause: std::io::Error,
-        #[cfg(feature = "backtrace")]
-        #[cfg_attr(feature = "backtrace", backtrace)]
+        #[cfg(use_error_backtrace)]
+        #[cfg_attr(use_error_backtrace, backtrace)]
         backtrace: std::backtrace::Backtrace,
     },
     #[error("Encountered non-UTF8 path")]

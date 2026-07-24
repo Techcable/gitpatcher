@@ -14,7 +14,7 @@
 //!   - [rebuildPatches.sh](https://github.com/PaperMC/Paper/blob/96f8b1a/scripts/rebuildPatches.sh)
 //!   - [applyPatches.sh](https://github.com/PaperMC/Paper/blob/668ad2c/scripts/applyPatches.sh)
 
-#![cfg_attr(feature = "backtrace", feature(error_generic_member_access))]
+#![cfg_attr(use_error_backtrace, feature(error_generic_member_access))]
 pub mod apply_patches;
 pub mod format_patches;
 pub mod regenerate_patches;

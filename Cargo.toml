@@ -26,6 +26,7 @@ relative-path = { version = "2", features = ["serde"] }
 # We use vcs-toolkit-rs for some of the jj/git interaction.
 # It looks like a good quality library, but a lot seems vibe-coded.
 vcs-core = "0.9"
+vcs-diff = "0.7"
 # Although we primarily use vcs-toolkit-rs, we still use some peices from gix as well.
 # The gix-url piece is particularly useful because it doesn't have the Unicode bloat of the `url` crate.
 gix-url = { version = "0.37", features = ["serde"] }

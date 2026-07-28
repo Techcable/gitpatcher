@@ -69,6 +69,10 @@ pub(super) enum RepoOpenErrorReason {
     NotRepoRoot {
         parent_repo_dir: PathBuf,
     },
+    #[error("The VCS {kind:?} is not currently supported by gitpatcher", kind = core_kind.as_str())]
+    UnsupportedCoreBackend {
+        core_kind: vcs_core::BackendKind,
+    },
 }
 impl RepoOpenErrorReason {
     /// An error calling [`std::fs::canonicalize`].
@@ -86,4 +90,12 @@ impl RepoOpenErrorReason {
 pub(crate) struct WorkingDirChangesQueryError {
     #[source]
     pub(super) cause: VcsError,
+}
+
+/// An error calling [`super::VcsRepo::create_tokio_runtime`].
+#[derive(Debug, thiserror::Error)]
+#[error("Failed to initialize tokio runtime")]
+pub(crate) struct TokioInitError {
+    #[source]
+    pub(super) cause: std::io::Error,
 }

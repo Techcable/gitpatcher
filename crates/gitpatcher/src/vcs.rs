@@ -11,13 +11,14 @@ use camino::{Utf8Path, Utf8PathBuf};
 use slog::{Key, Record, Serializer};
 use vcs_core::FileChange;
 
-use crate::vcs::errors::{OpenAction, RepoOpenErrorReason, WorkingDirChangesQueryError};
+use crate::vcs::errors::{OpenAction, RepoOpenErrorReason, TokioInitError, WorkingDirChangesQueryError};
 
 pub mod errors;
 
 pub use self::errors::{RepoOpenError, VcsError};
 
 /// The kind of version control system that a [`VcsRepo`] uses.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[non_exhaustive]
 pub enum VcsKind {
     /// The repository uses [git](https://git-scm.com/).
@@ -27,6 +28,46 @@ pub enum VcsKind {
     /// If the repository is colocated,
     /// it may also be usable as a git repository.
     Jujutsu,
+}
+impl VcsKind {
+    /// The full name of this VCS.
+    pub(crate) fn full_name(self) -> &'static str {
+        match self {
+            VcsKind::Git => "git",
+            VcsKind::Jujutsu => "jujutsu",
+        }
+    }
+
+    /// The shortened name of this VCS.
+    pub fn short_name(self) -> &'static str {
+        self.binary_name()
+    }
+
+    /// Get the name of the corresponding binary.
+    pub(crate) fn binary_name(self) -> &'static str {
+        match self {
+            VcsKind::Git => "git",
+            VcsKind::Jujutsu => "jj",
+        }
+    }
+
+    /// Get the corresponding [`vcs_core::BackendKind`].
+    #[expect(unused)]
+    pub(crate) fn to_core_backend(self) -> vcs_core::BackendKind {
+        match self {
+            VcsKind::Git => vcs_core::BackendKind::Git,
+            VcsKind::Jujutsu => vcs_core::BackendKind::Jj,
+        }
+    }
+}
+impl Display for VcsKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(if f.alternate() {
+            self.full_name()
+        } else {
+            self.short_name()
+        })
+    }
 }
 
 /// A version-controlled repository.
@@ -45,8 +86,17 @@ pub struct VcsRepo {
     /// The root working directory of the repository.
     workdir: Utf8PathBuf,
     repo: vcs_core::Repo,
+    kind: VcsKind,
 }
 impl VcsRepo {
+    /// Create a tokio runtime to execute `vcs-core` operations.
+    pub(crate) fn create_tokio_runtime() -> Result<tokio::runtime::LocalRuntime, TokioInitError> {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build_local(tokio::runtime::LocalOptions::default())
+            .map_err(|cause| TokioInitError { cause })
+    }
+
     /// Open a repository based on its working directory.
     pub fn open(working_dir: impl AsRef<Path>) -> Result<Self, RepoOpenError> {
         let working_dir = working_dir.as_ref();
@@ -98,7 +148,16 @@ impl VcsRepo {
             .map_err(RepoOpenErrorReason::NonUtf8Path)
             .map_err(&create_error)?;
         assert!(workdir.is_absolute(), "workdir is still relative {workdir:?}");
-        Ok(VcsRepo { workdir, repo })
+        let kind = match repo.kind() {
+            vcs_core::BackendKind::Jj => VcsKind::Jujutsu,
+            vcs_core::BackendKind::Git => VcsKind::Git,
+            other => {
+                return Err(create_error(RepoOpenErrorReason::UnsupportedCoreBackend {
+                    core_kind: other,
+                }));
+            }
+        };
+        Ok(VcsRepo { workdir, repo, kind })
     }
 
     /// The root working directory of the repository.
@@ -107,6 +166,12 @@ impl VcsRepo {
     #[inline]
     pub fn workdir(&self) -> &Utf8Path {
         &self.workdir
+    }
+
+    /// The kind of VCS as a [`VcsKind`].
+    #[inline]
+    pub fn vcs_kind(&self) -> VcsKind {
+        self.kind
     }
 
     /// Access this repository as a [`vcs_core::Repo`].

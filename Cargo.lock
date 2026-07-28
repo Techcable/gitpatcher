@@ -561,6 +561,7 @@ dependencies = [
  "tokio",
  "toml",
  "vcs-core",
+ "vcs-diff",
  "walkdir",
 ]
 

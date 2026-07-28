@@ -1,7 +1,12 @@
+use std::collections::HashSet;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use camino::{Utf8Path, Utf8PathBuf};
+use diffy::patch_set::{FileOperation, PatchKind};
 use indexmap::IndexMap;
+use itertools::Itertools;
 use once_cell::sync;
 use relative_path::{PathExt, RelativePath, RelativePathBuf};
 use slog::{Logger, debug, info, trace, warn};
@@ -10,10 +15,10 @@ use walkdir::WalkDir;
 use crate::config::{Config, PatchSetConfig, PatchSetStyle, PreferencesConfig, PrimaryConfig, RepoConfig};
 use crate::engine::errors::{
     ApplyPatchError, ApplyPatchErrorReason, PatchDirWalkError, PatchEngineInitError, PatchSetApplicationError,
-    RegeneratePatchError, RepoInitError,
+    RegeneratePatchError, RegeneratePatchErrorReason, RepoInitError,
 };
 use crate::utils::logging::DuctLoggingExt;
-use crate::vcs::{VcsError, VcsRepo};
+use crate::vcs::{VcsError, VcsKind, VcsRepo};
 
 pub mod errors;
 
@@ -27,7 +32,10 @@ pub struct ApplyPatchesOptions {
 }
 
 #[derive(Default, Clone, Debug, bon::Builder)]
-pub struct RegeneratePatchesOptions {}
+pub struct RegeneratePatchesOptions {
+    /// If dirty changes should be implicitly included into the last change rather than causing an error.
+    pub include_dirty: bool,
+}
 
 #[derive(Debug, Clone)]
 pub struct TargetRepo<'a> {
@@ -44,6 +52,7 @@ impl TargetRepo<'_> {
     pub fn name(&self) -> &str {
         &self.state.name
     }
+
     #[inline]
     fn config(&self) -> &RepoConfig {
         &self.state.config
@@ -123,15 +132,233 @@ impl TargetRepo<'_> {
         })
     }
 
-    pub fn regenerate_patches(&self) -> Result<(), RegeneratePatchError> {
-        let logger = self.engine.logger.new(slog::o!(
-            "target_repo" => self.target_workdir().to_string(),
-        ));
+    pub fn regenerate_patches(&self, opts: &RegeneratePatchesOptions) -> Result<(), RegeneratePatchError> {
+        let logger = &self.logger;
         let create_error = |reason| RegeneratePatchError {
             repo_name: self.state.name.clone(),
             reason: Box::new(reason),
         };
-        todo!()
+        let target_repo = self
+            .state
+            .repo
+            .get_or_try_init(|| VcsRepo::open(self.target_workdir()))
+            .map_err(RegeneratePatchErrorReason::OpenRepo)
+            .map_err(&create_error)?;
+        let rt = VcsRepo::create_tokio_runtime()
+            .map_err(RegeneratePatchErrorReason::TokioInit)
+            .map_err(&create_error)?;
+        for (index, patch_config) in self.config().patch_sets.iter().enumerate() {
+            match patch_config.style {
+                PatchSetStyle::PerFile => {
+                    if index != 0 && index + 1 != self.config().patch_sets.len() {
+                        return Err(create_error(RegeneratePatchErrorReason::PerFilePatchesNotFirstLast {
+                            index,
+                        }));
+                    }
+                    if let Some(prev_index) = index.checked_sub(1) {
+                        let prev_config = &self.config().patch_sets[prev_index];
+                        if matches!(prev_config.style, PatchSetStyle::PerFile) {
+                            return Err(create_error(RegeneratePatchErrorReason::PerFilePatchesAdjacently {
+                                first_index: prev_index,
+                            }));
+                        }
+                    }
+                }
+                unsupported @ PatchSetStyle::PerCommit => {
+                    return Err(create_error(RegeneratePatchErrorReason::UnsupportedPatchStyle {
+                        style: unsupported,
+                    }));
+                }
+            }
+        }
+        if self.config().patch_sets.is_empty() {
+            warn!(logger, "No configured patch sets to regenerate!");
+            return Ok(());
+        }
+        assert_eq!(
+            self.config().patch_sets.len(),
+            1,
+            "Because only per-file patches are supported right now, there should only be one patch set",
+        );
+        let single_patch_set = &self.config().patch_sets[0];
+        rt.block_on(async {
+            let changes = target_repo
+                .query_workdir_changes()
+                .await
+                .map_err(RegeneratePatchErrorReason::WorkingDirChangesQuery)?;
+            if !changes.is_empty() && !opts.include_dirty {
+                return Err(RegeneratePatchErrorReason::DirtyWorkdir { changes });
+            }
+            let upstream_ref = &self.config().upstream_ref;
+            let log_spec = match target_repo.core_repo().kind() {
+                vcs_core::BackendKind::Jj => {
+                    // intentionally exclude the working copy commit @
+                    format!("{upstream_ref}..@-")
+                }
+                vcs_core::BackendKind::Git => format!("{upstream_ref}..HEAD"),
+                other => return Err(RegeneratePatchErrorReason::UnsupportedVcsBackend { backend: other }),
+            };
+            let log = target_repo
+                .core_repo()
+                .log(
+                    &log_spec, // max=5 is sufficient because should we only have one change
+                    5,
+                )
+                .await
+                .map_err(RegeneratePatchErrorReason::Log)?;
+            let _single_commit = if log.len() == 1 {
+                &log[0]
+            } else {
+                return Err(RegeneratePatchErrorReason::NotExactlyOneCommit {
+                    log_rev: log_spec,
+                    count: log.len(),
+                });
+            };
+            let diff_spec = match target_repo.vcs_kind() {
+                VcsKind::Git => {
+                    // this is passed directly to `git diff`,
+                    // so implicitly includes the working copy changes
+                    format!("^{upstream_ref}")
+                }
+                VcsKind::Jujutsu => {
+                    format!("{upstream_ref}::@")
+                }
+            };
+            fn build_git_opts<'a>(after: &[&'a str]) -> Vec<&'a str> {
+                // see vcs_core here for some of the flags we include:
+                // https://github.com/ZelAnton/vcs-toolkit-rs/blob/vcs-git-v0.11.0/crates/git/src/lib.rs#L1350-L1367
+                // need to directly so we can add --no-renames and --no-prefix flags
+                const GIT_SHARED_OPTS: &[&str] =
+                    &["diff", "--no-color", "--no-ext-diff", "--no-renames", "--no-prefix"];
+                let mut res = GIT_SHARED_OPTS.to_vec();
+                res.extend(after);
+                res
+            }
+            let diff_cmd_args = match target_repo.vcs_kind() {
+                VcsKind::Git => build_git_opts(&[upstream_ref.as_str()]),
+                VcsKind::Jujutsu => {
+                    // far fewer options in jj diff than in git diff
+                    // to workaround this we actually configure it to use git diff indirectly
+                    // TODO: Less efficient than executing git diff against the backend repo
+                    static TOOL_CONFIG_OPT: LazyLock<String> = LazyLock::new(|| {
+                        let git_tool_opts = build_git_opts(&["--no-index", "$left", "$right"]);
+                        format!(
+                            "merge-tools.git.diff-args=[{}]",
+                            git_tool_opts
+                                .iter()
+                                .map(|x| {
+                                    // no need for escaping since everything is constant
+                                    format!("\"{x}\"")
+                                })
+                                .join(",")
+                        )
+                    });
+                    vec![
+                        "diff",
+                        "--config",
+                        TOOL_CONFIG_OPT.as_str(),
+                        "--tool",
+                        "git",
+                        "-r",
+                        diff_spec.as_str(),
+                    ]
+                }
+            };
+            let diff_text = duct::cmd(target_repo.vcs_kind().binary_name(), &diff_cmd_args)
+                .log_on_spawn(logger)
+                .dir(target_repo.workdir())
+                .read()
+                .map_err(|cause| RegeneratePatchErrorReason::RunDiff {
+                    diff_spec: diff_spec.clone(),
+                    vcs_kind: target_repo.vcs_kind(),
+                    cause,
+                })?;
+            let resolved_patch_dir =
+                Utf8PathBuf::try_from(single_patch_set.patch_dir.to_path(self.engine.root_workdir()))
+                    .expect("non-UTF8 path from UTF8 pieces");
+            let mut seen_files = HashSet::new();
+            for patch in diffy::patch_set::PatchSet::parse(&diff_text, diffy::patch_set::ParseOptions::gitdiff()) {
+                let patch = patch.map_err(|cause| RegeneratePatchErrorReason::ParseVcsDiff {
+                    vcs_kind: target_repo.vcs_kind(),
+                    cause,
+                })?;
+                let relative_target_file: Utf8PathBuf = match patch.operation() {
+                    FileOperation::Delete(file) | FileOperation::Create(file) => file.into(),
+                    FileOperation::Modify { original, modified } if original == modified => original.into(),
+                    FileOperation::Modify {
+                        original: from,
+                        modified: to,
+                    }
+                    | FileOperation::Rename { from, to }
+                    | FileOperation::Copy { from, to } => {
+                        let from = from.as_ref().into();
+                        let to = to.as_ref().into();
+                        return Err(RegeneratePatchErrorReason::RenameUnexpected {
+                            vcs_kind: target_repo.vcs_kind(),
+                            from,
+                            to,
+                        });
+                    }
+                };
+                let patch_file = resolved_patch_dir
+                    .join(&relative_target_file)
+                    .with_added_extension("patch");
+                debug!(
+                    logger,
+                    "Regenerating patch file";
+                    "target_file" => relative_target_file.as_str(),
+                    "patch_file" => patch_file.as_str(),
+                );
+                if !relative_target_file.is_relative() {
+                    return Err(RegeneratePatchErrorReason::PathTargetNotRelative {
+                        target_file: relative_target_file,
+                    });
+                }
+                assert!(
+                    // duplicate files should never happen with git diff
+                    seen_files.insert(relative_target_file.clone()),
+                    "vcs diff has unexpected output: duplicate file {relative_target_file}"
+                );
+                match patch.patch() {
+                    PatchKind::Text(patch) => {
+                        std::fs::File::create(&patch_file)
+                            .and_then(|mut file| {
+                                writeln!(file, "{patch}")?;
+                                file.flush()
+                            })
+                            .map_err(|cause| RegeneratePatchErrorReason::PatchWriteFailed {
+                                patch_file: patch_file.clone(),
+                                cause,
+                            })?;
+                    }
+                    PatchKind::Binary(_) => {
+                        return Err(RegeneratePatchErrorReason::BinaryPatchUnsupported {
+                            target_file: relative_target_file,
+                        });
+                    }
+                }
+            }
+            // delete patches for files that have no diff
+            self.walk_patch_dir::<RegeneratePatchErrorReason>(&resolved_patch_dir, |entry| {
+                if !seen_files.contains(Utf8Path::new(entry.relative_target_file)) {
+                    debug!(
+                        self.logger,
+                        "Removing old patch file (no longer has a diff)";
+                        "target_file" => entry.relative_target_file.as_str(),
+                        "patch_file" => entry.patch_file.as_str(),
+                    );
+                    std::fs::remove_file(entry.patch_file).map_err(|cause| {
+                        RegeneratePatchErrorReason::DeletePatchFile {
+                            patch_file: entry.patch_file.to_path_buf(),
+                            cause,
+                        }
+                    })?;
+                }
+                Ok(())
+            })?;
+            Ok(())
+        })
+        .map_err(&create_error)
     }
 
     pub fn apply_patches(&self, opts: &ApplyPatchesOptions) -> Result<(), ApplyPatchError> {
@@ -151,10 +378,7 @@ impl TargetRepo<'_> {
                 .map_err(ApplyPatchErrorReason::OpenExistingRepo)
                 .map_err(&create_error)?
         };
-        // need to spawn a tokio runtime for vcs_core to work
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build_local(tokio::runtime::LocalOptions::default())
+        let rt = VcsRepo::create_tokio_runtime()
             .map_err(ApplyPatchErrorReason::TokioInit)
             .map_err(&create_error)?;
         rt.block_on(async {
@@ -209,6 +433,9 @@ impl TargetRepo<'_> {
                                 patch_dir: patch_set.patch_dir.to_string().into(),
                                 cause,
                             })?;
+                    }
+                    unsupported @ PatchSetStyle::PerCommit => {
+                        return Err(ApplyPatchErrorReason::UnsupportedPatchStyle { style: unsupported });
                     }
                 }
                 let post_patch_changes = target_repo.query_workdir_changes().await?;

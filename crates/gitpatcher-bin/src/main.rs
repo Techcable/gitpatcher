@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use anyhow::{Context, anyhow};
 use camino::Utf8PathBuf;
 use clap::{Args, Parser, Subcommand};
-use gitpatcher::engine::{ApplyPatchesOptions, PatchEngine, TargetRepo};
+use gitpatcher::engine::{ApplyPatchesOptions, PatchEngine, RegeneratePatchesOptions, TargetRepo};
 use gitpatcher::vcs::VcsRepo;
 use slog::{Drain, Logger};
 
@@ -40,6 +40,7 @@ struct GitPatcher {
 enum PatchSubcommand {
     /// Apply configured patches.
     Apply(ApplyOpts),
+    Regenerate(RegenerateOptions),
 }
 
 #[derive(Args, Debug)]
@@ -82,6 +83,17 @@ struct ApplyOpts {
     /// Forcibly override unstaged changes in the working directory.
     #[clap(long)]
     force: bool,
+}
+
+#[derive(Parser, Debug)]
+struct RegenerateOptions {
+    #[clap(flatten)]
+    common: CommonOpts,
+    /// If dirty changes should be implicitly included.
+    ///
+    /// If not enabled, these will cause an error.
+    #[clap(long)]
+    include_dirty: bool,
 }
 
 struct CmdContext<'a> {
@@ -132,6 +144,7 @@ fn main() -> anyhow::Result<()> {
     let ctx = CmdContext::setup(&root_logger, &cli)?;
     match &cli.subcommand {
         PatchSubcommand::Apply(opts) => apply_patch(&ctx, opts),
+        PatchSubcommand::Regenerate(opts) => regenerate_patch(&ctx, opts),
     }
 }
 
@@ -142,6 +155,19 @@ fn apply_patch(ctx: &CmdContext, opts: &ApplyOpts) -> anyhow::Result<()> {
         target
             .apply_patches(&opts)
             .with_context(|| format!("Failed to apply patches to {}", target.name()))?;
+    }
+    Ok(())
+}
+
+fn regenerate_patch(ctx: &CmdContext, opts: &RegenerateOptions) -> anyhow::Result<()> {
+    let targets = opts.common.resolve_targets(ctx)?;
+    for target in targets {
+        let opts = RegeneratePatchesOptions::builder()
+            .include_dirty(opts.include_dirty)
+            .build();
+        target
+            .regenerate_patches(&opts)
+            .with_context(|| format!("Failed to regenerate patches for {}", target.name()))?;
     }
     Ok(())
 }

@@ -251,11 +251,13 @@ struct PatchSetValidateContext {
 #[serde(rename_all = "kebab-case")]
 pub enum PatchSetStyle {
     PerFile,
+    PerCommit,
 }
 impl Display for PatchSetStyle {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             PatchSetStyle::PerFile => "per-file",
+            PatchSetStyle::PerCommit => "per-commit",
         })
     }
 }

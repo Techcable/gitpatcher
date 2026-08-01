@@ -239,7 +239,15 @@ jobs:
   # App: https://github.com/marketplace/actions/alls-green
   allgood:
     if: always()
-    needs: [test,clippy,docs,cargo-reedme,typos,rustfmt,tombi,pyfmt]
+    needs:
+      - test
+      - clippy
+      - docs
+      - cargo-reedme
+      - typos
+      - rustfmt
+      - tombi
+      - pyfmt
     runs-on: ubuntu-latest
     steps:
       - name: Decide whether the needed jobs succeeded or failed

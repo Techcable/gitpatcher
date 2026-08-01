@@ -33,7 +33,12 @@ def test(ctx):
 @task
 def check(ctx, format=True):
     clippy(ctx)
-    ctx.run("cargo +nightly doc --document-private-items --no-deps --workspace --all-features")
+    # need to exclude gitpatcher-bin due to "output filename collision"
+    # The gitpatcher binary conflicts with the gitpatcher library.
+    # See rust-lang/cargo#6313 for details
+    ctx.run("cargo +nightly doc --document-private-items --no-deps --workspace --exclude gitpatcher-bin --all-features")
+    # separately check gitpatcher-bin docs
+    ctx.run("cargo +nightly doc --document-private-items --no-deps -p gitpatcher-bin --all-features")
     ctx.run("cargo shear")
     # by default, check formatting as well
     if format:

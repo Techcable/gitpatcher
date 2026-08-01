@@ -138,8 +138,38 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Docs
         # NOTE: Passing --document-private-items is needed to check for doc errors in private items
+        # Due to conflict between binary and library name we need to check gitpatcher-bin separately.
+        # See tasks.py for details on this.
         run: |
-          cargo doc --document-private-items --no-deps --workspace --verbose --no-default-features --features "${{ matrix.features }}"
+          cargo doc --document-private-items --no-deps --workspace --exclude gitpatcher-bin --verbose --no-default-features --features "${{ matrix.features }}"
+
+  docs-bin:
+    # Only run on PRs if the source branch is on someone else's repo
+    if: ${{ github.event_name != 'pull_request' || github.repository != github.event.pull_request.head.repo.full_name }}
+
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: "-D warnings"
+    strategy:
+      fail-fast: false
+      matrix:
+        rust:
+          - nightly
+          - stable
+        features:
+          - ""
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Docs
+        # See
+        run: |
+          cargo doc --document-private-items --no-deps -p gitpatcher-bin --verbose --no-default-features --features "${{ matrix.features }}"
+
   cargo-reedme:
     # Only run on PRs if the source branch is on someone else's repo
     if: ${{ github.event_name != 'pull_request' || github.repository != github.event.pull_request.head.repo.full_name }}
@@ -243,6 +273,7 @@ jobs:
       - test
       - clippy
       - docs
+      - docs-bin
       - cargo-reedme
       - typos
       - rustfmt

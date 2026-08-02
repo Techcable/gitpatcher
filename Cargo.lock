@@ -603,6 +603,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
+name = "maybe-const-fn"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c67ec298b937f25f914711dabc859d4aa864fb9078c6b243512d3c4a5f31883"
+
+[[package]]
 name = "memchr"
 version = "2.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -797,9 +803,12 @@ checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
 name = "rustversion-detect"
-version = "0.2.0"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5be1ba5342d8d736def859109063c5fa46bf96367e73d872bade120bcc62a62"
+checksum = "865356c232dec36ca51aa9c07028c5932a72b48167e38e9d7a2a18976f04b3eb"
+dependencies = [
+ "maybe-const-fn",
+]
 
 [[package]]
 name = "semver"
